@@ -1,0 +1,12 @@
+[package]
+name = "rust_nes_emu"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anstyle = "1"
+clap = { version = "4", features = ["derive"] }
+chrono = "0.4"
+env_logger = "0.11"
+log = { version = "0.4", features = ["max_level_trace"] }
+minifb = "0.24"
