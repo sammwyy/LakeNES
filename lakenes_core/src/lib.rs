@@ -52,9 +52,11 @@ impl NES {
         }
 
         for _ in 0..cpu_cycles {
-            if let Some(ref mut apu) = self.bus.apu {
-                apu.step();
+            let mut apu = self.bus.apu.take();
+            if let Some(ref mut apu_ref) = apu {
+                apu_ref.step(|addr| self.bus.read(addr));
             }
+            self.bus.apu = apu;
         }
 
         self.bus.check_ppu_nmi();

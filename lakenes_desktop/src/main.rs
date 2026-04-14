@@ -73,7 +73,8 @@ fn main() {
     stream.play().expect("Failed to start audio stream");
 
     // Pre-calculate samples per cycle
-    let samples_per_cycle: f64 = sample_rate / 1789773.0;
+    let cpu_frequency = 1789772.7272; // NTSC CPU Frequency
+    let samples_per_cycle: f64 = sample_rate / cpu_frequency;
     let mut sample_accumulator = 0.0;
     let empty_buffer = vec![0u32; 256 * 240];
 
@@ -127,35 +128,48 @@ fn main() {
             nes_instance.update_joypad(1, joypad_bits);
 
             let mut cycles_this_frame = 0;
+
+            // Extract references to components once per frame (or once per loop)
+            // But we need to use 'self.bus' which is part of 'nes_instance'.
+            // However, we can use 'nes_instance.bus' components.
+
             while cycles_this_frame < 29780 {
                 let cpu_cycles = nes_instance.cpu.step(&mut nes_instance.bus);
                 cycles_this_frame += cpu_cycles;
 
-                for _ in 0..(cpu_cycles * 3) {
-                    if let Some(ref mut ppu) = nes_instance.bus.ppu {
-                        if let Some(ref mut rom) = nes_instance.bus.rom {
+                let bus = &mut nes_instance.bus;
+
+                // Optimized PPU stepping
+                if let Some(ref mut ppu) = bus.ppu {
+                    if let Some(ref mut rom) = bus.rom {
+                        for _ in 0..(cpu_cycles * 3) {
                             ppu.step(&mut *rom.mapper);
                         }
                     }
                 }
 
-                for _ in 0..cpu_cycles {
-                    if let Some(ref mut apu) = nes_instance.bus.apu {
-                        apu.step();
+                // Optimized APU stepping
+                let mut apu = bus.apu.take();
+                if let Some(ref mut apu_ref) = apu {
+                    for _ in 0..cpu_cycles {
+                        apu_ref.step(|addr| bus.read(addr));
                         sample_accumulator += samples_per_cycle;
                         if sample_accumulator >= 1.0 {
                             sample_accumulator -= 1.0;
-                            let sample = apu.output_sample() * 0.4;
-                            while producer.vacant_len() == 0 {
-                                std::thread::sleep(std::time::Duration::from_micros(10));
+                            let sample = apu_ref.output_sample() * 0.4;
+
+                            // Audio sync: wait if buffer is full with high responsivity
+                            while producer.vacant_len() < 128 {
+                                std::thread::yield_now();
                             }
                             let _ = producer.try_push(sample);
                         }
                     }
                 }
+                bus.apu = apu;
 
-                nes_instance.bus.check_ppu_nmi();
-                nes_instance.bus.check_mapper_irq();
+                bus.check_ppu_nmi();
+                bus.check_mapper_irq();
             }
 
             window
