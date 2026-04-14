@@ -23,6 +23,7 @@ pub struct APU {
     pub dmc: DMC,
     pub frame_counter: u64,
     pub frame_cycle: u32,
+    pub frame_step: u8, // current quarter-frame step (0-3 for 4-step, 0-4 for 5-step)
     pub mode_5step: bool,
     pub irq_inhibit: bool,
     hpf_state: f32,
@@ -38,6 +39,7 @@ impl APU {
             dmc: DMC::new(),
             frame_counter: 0,
             frame_cycle: 0,
+            frame_step: 0,
             mode_5step: false,
             irq_inhibit: false,
             hpf_state: 0.0,
@@ -84,10 +86,13 @@ impl APU {
                 }
                 if !self.dmc.enabled {
                     self.dmc.bytes_remaining = 0;
+                    // Clear sample buffer so playback stops
+                    self.dmc.sample_buffer = None;
                 } else if self.dmc.bytes_remaining == 0 {
                     self.dmc.current_address = self.dmc.sample_address;
                     self.dmc.bytes_remaining = self.dmc.sample_length;
                 }
+                // Writing $4015 always clears the DMC IRQ flag
                 self.dmc.irq_flag = false;
             }
             0x4017 => {
@@ -132,13 +137,18 @@ impl APU {
         }
         self.triangle.step_timer();
         self.noise.step_timer();
-        self.dmc.step_reader(&mut read_mem);
-        self.dmc.step_timer();
+
+        // DMC: fetch memory first, then clock the output timer
+        // Only fetch / tick when the channel is enabled
+        if self.dmc.enabled {
+            self.dmc.step_reader(&mut read_mem);
+            self.dmc.step_timer();
+        }
 
         self.frame_counter = self.frame_counter.wrapping_add(1);
         self.frame_cycle += 1;
 
-        let frame_step_cycles = 7457; // NTSC quarter frame cycles
+        let frame_step_cycles = 7457; // NTSC quarter frame ~7457 CPU cycles
 
         if self.frame_cycle >= frame_step_cycles {
             self.frame_cycle = 0;
@@ -147,22 +157,25 @@ impl APU {
     }
 
     fn step_frame_counter(&mut self) {
-        // Basic 4-step frame counter logic
-        let step = (self.frame_counter / 7457) % 4;
+        // The APU frame counter fires at 4 quarter-frame points per frame.
+        // frame_cycle resets every 7457 CPU cycles (quarter frame).
+        // We track which quarter we are in via a separate counter.
+        self.frame_step = (self.frame_step + 1) % if self.mode_5step { 5 } else { 4 };
 
-        match step {
+        match self.frame_step {
             0 | 2 => {
+                // Quarter-frame only
                 self.step_quarter_frame();
             }
-            1 => {
+            1 | 3 => {
+                // Half-frame (includes quarter-frame)
                 self.step_quarter_frame();
                 self.step_half_frame();
             }
-            3 => {
-                if !self.mode_5step {
-                    self.step_quarter_frame();
-                    self.step_half_frame();
-                }
+            4 => {
+                // 5-step mode: extra half-frame at step 4, no IRQ
+                self.step_quarter_frame();
+                self.step_half_frame();
             }
             _ => {}
         }

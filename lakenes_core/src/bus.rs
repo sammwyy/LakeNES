@@ -184,7 +184,12 @@ impl Bus {
                 irq_active = true;
             }
         }
-        // Also check APU? (Unimplemented)
+        // Also check APU DMC IRQ
+        if let Some(ref apu) = self.apu {
+            if apu.dmc.irq_flag {
+                irq_active = true;
+            }
+        }
         if irq_active {
             self.trigger_irq();
         }

@@ -126,7 +126,7 @@ pub struct PPU {
     pub oam_addr: u8,
 
     // Output
-    pub frame_buffer: [u32; 256 * 240],
+    pub frame_buffer: Vec<u32>,
     pub nmi_interrupt: bool,
 
     // Internal State
@@ -178,7 +178,7 @@ impl PPU {
             vram: [0; 2048],
             oam_data: [0; 256],
             oam_addr: 0,
-            frame_buffer: [0; 256 * 240],
+            frame_buffer: alloc::vec![0u32; 256 * 240],
             nmi_interrupt: false,
             cycle: 0,
             scanline: 0,
@@ -635,10 +635,10 @@ impl PPU {
                 let oam_idx = self.scanline_sprites[i] as usize;
                 let sprite_x = self.oam_data[oam_idx * 4 + 3];
 
-                // Check if we are at the sprite position
-                if (self.cycle as u16 - 1) >= sprite_x as u16
-                    && (self.cycle as u16 - 1) < (sprite_x as u16 + 8)
-                {
+                // Only process sprites that have started (fine-grained shift counter
+                // already handles the actual pixel output via shifters).
+                let x_pos = self.cycle as u16 - 1;
+                if x_pos >= sprite_x as u16 && x_pos < (sprite_x as u16 + 8) {
                     if fg_pixel == 0 {
                         let p0 = (self.sprite_shifter_pattern_lo[i] & 0x80) != 0;
                         let p1 = (self.sprite_shifter_pattern_hi[i] & 0x80) != 0;
@@ -647,12 +647,13 @@ impl PPU {
                         if fg_pixel != 0 {
                             let attr = self.oam_data[oam_idx * 4 + 2];
                             fg_palette = (attr & 0x03) + 4;
-                            fg_priority = (attr & 0x20) == 0; // 0: Priority over BG
+                            fg_priority = (attr & 0x20) == 0; // 0 = in front of BG
 
+                            // Sprite zero is the one at OAM index 0
                             if oam_idx == 0 {
                                 fg_sprite_zero = true;
                             }
-                            break; // Highest priority sprite found
+                            break;
                         }
                     }
                 }
@@ -661,30 +662,23 @@ impl PPU {
 
         let pixel = match (bg_pixel, fg_pixel) {
             (0, 0) => 0,
-            (0, id) => {
-                if id != 0 {
-                    fg_palette << 2 | id
-                } else {
-                    0
-                }
-            }
-            (id, 0) => bg_palette << 2 | id,
+            (0, fg) => fg_palette << 2 | fg,
+            (bg, 0) => bg_palette << 2 | bg,
             (bg, fg) => {
-                // Priority logic
+                // Sprite-zero hit detection:
+                // Conditions: both BG and sprite-0 pixels are opaque, rendering is on,
+                // and the pixel is not in the left 8 columns if masking is active.
                 if fg_sprite_zero
                     && self.sprite_zero_hit_possible
                     && self.mask.contains(Mask::RENDER_BACKGROUND)
                     && self.mask.contains(Mask::RENDER_SPRITES)
                 {
-                    // Check strict masking
-                    let show_left_bg = self.mask.contains(Mask::RENDER_BACKGROUND_LEFT);
-                    let show_left_spr = self.mask.contains(Mask::RENDER_SPRITES_LEFT);
-                    if (self.cycle - 1) >= 8 || (show_left_bg && show_left_spr) {
-                        // Hit!
-                        if (self.cycle - 1) != 255 {
-                            // exclude 255?
-                            self.status.insert(Status::SPRITE_ZHIT);
-                        }
+                    let x = self.cycle - 1;
+                    let left_clipping = !self.mask.contains(Mask::RENDER_BACKGROUND_LEFT)
+                        || !self.mask.contains(Mask::RENDER_SPRITES_LEFT);
+                    // x==255 is excluded per NES hardware spec
+                    if x != 255 && (!left_clipping || x >= 8) {
+                        self.status.insert(Status::SPRITE_ZHIT);
                     }
                 }
 
