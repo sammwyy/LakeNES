@@ -1,12 +1,17 @@
-[package]
-name = "rust_nes_emu"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [
+    "lakenes_core",
+    "lakenes_desktop",
+]
+resolver = "2"
 
-[dependencies]
-anstyle = "1"
-clap = { version = "4", features = ["derive"] }
-chrono = "0.4"
-env_logger = "0.11"
-log = { version = "0.4", features = ["max_level_trace"] }
-minifb = "0.24"
+[profile.dev]
+opt-level = 0
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3

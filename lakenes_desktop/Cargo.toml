@@ -1,0 +1,16 @@
+[package]
+name = "lakenes-desktop"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+lakenes-core = { path = "../lakenes_core" }
+clap = { version = "4", features = ["derive"] }
+env_logger = "0.11"
+log = "0.4"
+minifb = "0.24"
+cpal = "0.17.1"
+ringbuf = "0.4.8"
+anstyle = "1"
+chrono = "0.4"
+rfd = "0.15"
