@@ -1,13 +1,26 @@
-use crate::mappers::Mapper;
-use crate::mappers::mapper0::Mapper0;
-use crate::mappers::mapper1::Mapper1;
-use crate::mappers::mapper2::Mapper2;
-use crate::mappers::mapper4::Mapper4;
 use alloc::boxed::Box;
+
+pub mod mapper0;
+pub mod mapper1;
+pub mod mapper2;
+pub mod mapper4;
+
+use mapper0::Mapper0;
+use mapper1::Mapper1;
+use mapper2::Mapper2;
+use mapper4::Mapper4;
 
 const NES_HEADER_SIZE: usize = 16;
 const PRG_ROM_BANK_SIZE: usize = 16384;
 const CHR_ROM_BANK_SIZE: usize = 8192;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Mirroring {
+    Horizontal,
+    Vertical,
+    OneScreenLow,
+    OneScreenHigh,
+}
 
 #[derive(Debug)]
 pub enum ROMError {
@@ -15,9 +28,21 @@ pub enum ROMError {
     IncompleteData,
 }
 
+pub trait Mapper {
+    fn read_prg(&mut self, addr: u16) -> u8;
+    fn write_prg(&mut self, addr: u16, data: u8);
+    fn read_chr(&mut self, addr: u16) -> u8;
+    fn write_chr(&mut self, addr: u16, data: u8);
+    fn irq_flag(&self) -> bool {
+        false
+    }
+    fn mirroring(&self) -> Mirroring {
+        Mirroring::Vertical
+    }
+}
+
 pub struct ROM {
     pub mapper: Box<dyn Mapper>,
-    pub mirroring: bool,
 }
 
 impl ROM {
@@ -35,12 +60,12 @@ impl ROM {
         let prg_banks = header[4] as usize;
         let chr_banks = header[5] as usize;
         let mapper_id = (header[7] & 0xF0) | (header[6] >> 4);
+
         let mirroring_mode = if (header[6] & 0x01) != 0 {
-            crate::mappers::Mirroring::Vertical
+            Mirroring::Vertical
         } else {
-            crate::mappers::Mirroring::Horizontal
+            Mirroring::Horizontal
         };
-        let mirroring = (header[6] & 0x01) != 0;
 
         let mut offset = NES_HEADER_SIZE;
 
@@ -66,14 +91,13 @@ impl ROM {
                 return Err(ROMError::IncompleteData);
             }
             let data = bytes[offset..offset + chr_size].to_vec();
-            let _ = offset; // Final update not read
             data
         } else {
             alloc::vec![0u8; CHR_ROM_BANK_SIZE]
         };
 
-        log::debug!("PRG ROM: {} banks ({} bytes)", prg_banks, prg_rom.len());
-        log::debug!("CHR ROM: {} banks ({} bytes)", chr_banks, chr_rom.len());
+        log::info!("PRG ROM: {} banks ({} bytes)", prg_banks, prg_rom.len());
+        log::info!("CHR ROM: {} banks ({} bytes)", chr_banks, chr_rom.len());
         log::info!("Mapper ID: {}", mapper_id);
 
         let mapper: Box<dyn Mapper> = match mapper_id {
@@ -102,6 +126,6 @@ impl ROM {
             }
         };
 
-        Ok(Self { mapper, mirroring })
+        Ok(Self { mapper })
     }
 }

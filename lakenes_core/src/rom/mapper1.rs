@@ -195,11 +195,33 @@ impl Mapper for Mapper1 {
         }
     }
 
-    fn write_chr(&mut self, _addr: u16, _data: u8) {
-        // CHR RAM support would be here
+    fn write_chr(&mut self, addr: u16, data: u8) {
         if self.chr_rom.is_empty() {
-            // Using CHR RAM potentially? For now ignore.
-            // If I had a Vec for chr_ram...
+            return;
+        }
+
+        let chr_mode = (self.control >> 4) & 0x01;
+        let offset = match chr_mode {
+            0 => {
+                // 8KB Mode
+                let bank = (self.chr_bank_0 & 0x1E) as usize % (self.num_chr_banks / 2);
+                (bank * 8192) + addr as usize
+            }
+            1 => {
+                // 4KB Mode
+                if addr < 0x1000 {
+                    let bank = self.chr_bank_0 as usize % self.num_chr_banks;
+                    (bank * 4096) + addr as usize
+                } else {
+                    let bank = self.chr_bank_1 as usize % self.num_chr_banks;
+                    (bank * 4096) + (addr - 0x1000) as usize
+                }
+            }
+            _ => 0,
+        };
+
+        if offset < self.chr_rom.len() {
+            self.chr_rom[offset] = data;
         }
     }
 

@@ -15,18 +15,170 @@ pub(crate) const LENGTH_TABLE: [u8; 32] = [
     192, 24, 72, 26, 16, 28, 32, 30,
 ];
 
+// ---------------------------------------------------------------------------
+// First-order IIR audio filter
+// ---------------------------------------------------------------------------
+struct AudioFilter {
+    b0: f32,
+    b1: f32,
+    a1: f32,
+    prev_x: f32,
+    prev_y: f32,
+}
+
+impl AudioFilter {
+    const PI: f32 = core::f32::consts::PI;
+
+    fn high_pass(sample_rate: f32, cutoff: f32) -> Self {
+        let c = sample_rate / Self::PI / cutoff;
+        let a0i = 1.0 / (1.0 + c);
+        Self {
+            b0: c * a0i,
+            b1: -(c * a0i),
+            a1: (1.0 - c) * a0i,
+            prev_x: 0.0,
+            prev_y: 0.0,
+        }
+    }
+
+    fn low_pass(sample_rate: f32, cutoff: f32) -> Self {
+        let c = sample_rate / Self::PI / cutoff;
+        let a0i = 1.0 / (1.0 + c);
+        Self {
+            b0: a0i,
+            b1: a0i,
+            a1: (1.0 - c) * a0i,
+            prev_x: 0.0,
+            prev_y: 0.0,
+        }
+    }
+
+    fn tick(&mut self, x: f32) -> f32 {
+        let y = self.b0 * x + self.b1 * self.prev_x - self.a1 * self.prev_y;
+        self.prev_y = y;
+        self.prev_x = x;
+        y
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Precise APU frame counter
+//
+// NES NTSC exact cycle counts (from nesdev wiki):
+//  Mode 0 (4-step):
+//    Quarter @  7,457
+//    Half    @ 14,913
+//    Quarter @ 22,371
+//    IRQ     @ 29,828
+//    Half+IRQ@ 29,829  (also clears frame counter)
+//  Mode 1 (5-step):
+//    Quarter @  7,457
+//    Half    @ 14,913
+//    Quarter @ 22,371
+//    (nothing at 29,828-30k)
+//    Half    @ 37,281
+// ---------------------------------------------------------------------------
+struct FrameCounter {
+    cycle: u32,
+    mode_5step: bool,
+    irq_inhibit: bool,
+    irq_flag: bool,
+}
+
+impl FrameCounter {
+    fn new() -> Self {
+        Self {
+            cycle: 0,
+            mode_5step: false,
+            irq_inhibit: false,
+            irq_flag: false,
+        }
+    }
+
+    /// Returns (quarter_frame, half_frame, irq)
+    fn tick(&mut self) -> (bool, bool, bool) {
+        self.cycle = self.cycle.wrapping_add(1);
+        let mut qf = false;
+        let mut hf = false;
+        let mut irq = false;
+
+        if !self.mode_5step {
+            // 4-step mode
+            match self.cycle {
+                7_457 => {
+                    qf = true;
+                }
+                14_913 => {
+                    qf = true;
+                    hf = true;
+                }
+                22_371 => {
+                    qf = true;
+                }
+                29_828 => {
+                    if !self.irq_inhibit {
+                        self.irq_flag = true;
+                        irq = true;
+                    }
+                }
+                29_829 => {
+                    qf = true;
+                    hf = true;
+                    if !self.irq_inhibit {
+                        self.irq_flag = true;
+                        irq = true;
+                    }
+                    self.cycle = 0;
+                }
+                _ => {}
+            }
+        } else {
+            // 5-step mode (no IRQ)
+            match self.cycle {
+                7_457 => {
+                    qf = true;
+                }
+                14_913 => {
+                    qf = true;
+                    hf = true;
+                }
+                22_371 => {
+                    qf = true;
+                }
+                37_281 => {
+                    qf = true;
+                    hf = true;
+                    self.cycle = 0;
+                }
+                _ => {}
+            }
+        }
+
+        (qf, hf, irq)
+    }
+
+    fn write_register(&mut self, val: u8) {
+        self.mode_5step = (val & 0x80) != 0;
+        self.irq_inhibit = (val & 0x40) != 0;
+        if self.irq_inhibit {
+            self.irq_flag = false;
+        }
+        // Reset the cycle counter so the timer starts fresh
+        self.cycle = 0;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// APU
+// ---------------------------------------------------------------------------
 pub struct APU {
     pub pulse1: Pulse,
     pub pulse2: Pulse,
     pub triangle: Triangle,
     pub noise: Noise,
     pub dmc: DMC,
-    pub frame_counter: u64,
-    pub frame_cycle: u32,
-    pub frame_step: u8, // current quarter-frame step (0-3 for 4-step, 0-4 for 5-step)
-    pub mode_5step: bool,
-    pub irq_inhibit: bool,
-    hpf_state: f32,
+    frame_counter: FrameCounter,
+    filters: [AudioFilter; 3],
 }
 
 impl APU {
@@ -37,12 +189,12 @@ impl APU {
             triangle: Triangle::new(),
             noise: Noise::new(),
             dmc: DMC::new(),
-            frame_counter: 0,
-            frame_cycle: 0,
-            frame_step: 0,
-            mode_5step: false,
-            irq_inhibit: false,
-            hpf_state: 0.0,
+            frame_counter: FrameCounter::new(),
+            filters: [
+                AudioFilter::high_pass(44_100.0, 90.0),
+                AudioFilter::high_pass(44_100.0, 440.0),
+                AudioFilter::low_pass(44_100.0, 14_000.0),
+            ],
         }
     }
 
@@ -72,6 +224,7 @@ impl APU {
                 self.triangle.enabled = (val & 0x04) != 0;
                 self.noise.enabled = (val & 0x08) != 0;
                 self.dmc.enabled = (val & 0x10) != 0;
+
                 if !self.pulse1.enabled {
                     self.pulse1.length_counter = 0;
                 }
@@ -86,7 +239,6 @@ impl APU {
                 }
                 if !self.dmc.enabled {
                     self.dmc.bytes_remaining = 0;
-                    // Clear sample buffer so playback stops
                     self.dmc.sample_buffer = None;
                 } else if self.dmc.bytes_remaining == 0 {
                     self.dmc.current_address = self.dmc.sample_address;
@@ -96,8 +248,12 @@ impl APU {
                 self.dmc.irq_flag = false;
             }
             0x4017 => {
-                self.mode_5step = (val & 0x80) != 0;
-                self.irq_inhibit = (val & 0x40) != 0;
+                self.frame_counter.write_register(val);
+                // In 5-step mode, immediately fire a half-frame clock
+                if self.frame_counter.mode_5step {
+                    self.step_quarter_frame();
+                    self.step_half_frame();
+                }
             }
             _ => {}
         }
@@ -123,61 +279,54 @@ impl APU {
         if self.dmc.irq_flag {
             res |= 0x80;
         }
+        if self.frame_counter.irq_flag {
+            res |= 0x40;
+        }
+        // Reading $4015 clears frame counter IRQ
+        self.frame_counter.irq_flag = false;
         res
+    }
+
+    pub fn irq_active(&self) -> bool {
+        self.dmc.irq_flag || self.frame_counter.irq_flag
     }
 
     pub fn step<F>(&mut self, mut read_mem: F)
     where
         F: FnMut(u16) -> u8,
     {
-        // Pulse channels are clocked every 2 CPU cycles
-        if self.frame_counter % 2 == 0 {
+        // Triangle ticks every CPU cycle; pulse/noise every 2 CPU cycles.
+        // The frame counter also tracks individual CPU cycles.
+        let fc = self.frame_counter.tick();
+
+        // Triangle clocks every cycle
+        self.triangle.step_timer();
+
+        // Pulse clocks every *other* cycle
+        // We use the frame_counter cycle parity (odd cycles in reference)
+        let odd = (self.frame_counter.cycle & 1) == 1;
+        if odd {
             self.pulse1.step_timer();
             self.pulse2.step_timer();
         }
-        self.triangle.step_timer();
+
+        // Noise and Triangle clock every cycle
         self.noise.step_timer();
 
-        // DMC: fetch memory first, then clock the output timer
-        // Only fetch / tick when the channel is enabled
+        // DMC: reader first if channel is enabled and has samples,
+        // but timer always clocks to maintain internal phase.
         if self.dmc.enabled {
             self.dmc.step_reader(&mut read_mem);
-            self.dmc.step_timer();
         }
+        self.dmc.step_timer();
 
-        self.frame_counter = self.frame_counter.wrapping_add(1);
-        self.frame_cycle += 1;
-
-        let frame_step_cycles = 7457; // NTSC quarter frame ~7457 CPU cycles
-
-        if self.frame_cycle >= frame_step_cycles {
-            self.frame_cycle = 0;
-            self.step_frame_counter();
+        // Apply frame counter signals
+        let (qf, hf, _irq) = fc;
+        if qf {
+            self.step_quarter_frame();
         }
-    }
-
-    fn step_frame_counter(&mut self) {
-        // The APU frame counter fires at 4 quarter-frame points per frame.
-        // frame_cycle resets every 7457 CPU cycles (quarter frame).
-        // We track which quarter we are in via a separate counter.
-        self.frame_step = (self.frame_step + 1) % if self.mode_5step { 5 } else { 4 };
-
-        match self.frame_step {
-            0 | 2 => {
-                // Quarter-frame only
-                self.step_quarter_frame();
-            }
-            1 | 3 => {
-                // Half-frame (includes quarter-frame)
-                self.step_quarter_frame();
-                self.step_half_frame();
-            }
-            4 => {
-                // 5-step mode: extra half-frame at step 4, no IRQ
-                self.step_quarter_frame();
-                self.step_half_frame();
-            }
-            _ => {}
+        if hf {
+            self.step_half_frame();
         }
     }
 
@@ -202,22 +351,30 @@ impl APU {
         let p2 = self.pulse2.output();
         let t = self.triangle.output();
         let n = self.noise.output();
+        let d = self.dmc.output_level;
 
+        // NES APU mixer formula (from nesdev wiki)
         let pulse_out = if p1 + p2 > 0 {
             95.88 / (8128.0 / (p1 + p2) as f32 + 100.0)
         } else {
             0.0
         };
-        let d = self.dmc.output_level;
+
         let tnd_out = if t > 0 || n > 0 || d > 0 {
             159.79 / (1.0 / (t as f32 / 8227.0 + n as f32 / 12241.0 + d as f32 / 22638.0) + 100.0)
         } else {
             0.0
         };
 
-        let out = pulse_out + tnd_out;
-        self.hpf_state += (out - self.hpf_state) * 0.01;
-        out - self.hpf_state
+        // Raw output in [0, ~1]
+        let raw = pulse_out + tnd_out;
+
+        // Apply three IIR audio filters (HP 90Hz, HP 440Hz, LP 14kHz)
+        let mut out = raw;
+        for f in self.filters.iter_mut() {
+            out = f.tick(out);
+        }
+        out
     }
 }
 

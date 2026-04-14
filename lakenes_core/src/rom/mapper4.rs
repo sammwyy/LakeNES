@@ -233,9 +233,18 @@ impl Mapper for Mapper4 {
         }
     }
 
-    fn write_chr(&mut self, addr: u16, _data: u8) {
+    fn write_chr(&mut self, addr: u16, data: u8) {
         self.check_a12(addr);
-        // CHR RAM support ignored
+        if self.chr_rom.is_empty() {
+            return;
+        }
+
+        let bank = self.read_chr_bank(addr);
+        let offset = (bank * 1024) + (addr as usize & 0x03FF);
+
+        if offset < self.chr_rom.len() {
+            self.chr_rom[offset] = data;
+        }
     }
 
     fn irq_flag(&self) -> bool {

@@ -184,9 +184,9 @@ impl Bus {
                 irq_active = true;
             }
         }
-        // Also check APU DMC IRQ
+        // Check APU IRQs (DMC end-of-sample + frame counter)
         if let Some(ref apu) = self.apu {
-            if apu.dmc.irq_flag {
+            if apu.irq_active() {
                 irq_active = true;
             }
         }

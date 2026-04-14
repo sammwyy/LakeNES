@@ -1,4 +1,4 @@
-use crate::mappers::{Mapper, Mirroring};
+use crate::rom::{Mapper, Mirroring};
 use alloc::vec::Vec;
 use bitflags::bitflags;
 
@@ -169,6 +169,9 @@ pub struct PPU {
     // Legacy / Debug compatibility
     pub scroll_x: u8,
     pub scroll_y: u8,
+
+    pub odd_frame: bool,
+    vblank_suppress: bool,
 }
 
 impl PPU {
@@ -207,6 +210,8 @@ impl PPU {
             sprite_zero_being_rendered: false,
             scroll_x: 0,
             scroll_y: 0,
+            odd_frame: false,
+            vblank_suppress: false,
         }
     }
 
@@ -231,6 +236,13 @@ impl PPU {
         let res = (self.status.bits() & 0xE0) | (self.data_buffer & 0x1F);
         self.status.remove(Status::VBLANK);
         self.w_toggle = false;
+
+        // VBlank suppression: if read happens exactly when VBlank would be set,
+        // it returns 0 for bit 7 and prevents NMI.
+        if self.scanline == 241 && self.cycle == 1 {
+            self.vblank_suppress = true;
+        }
+
         res
     }
 
@@ -404,8 +416,13 @@ impl PPU {
     pub fn step(&mut self, mapper: &mut dyn Mapper) {
         if self.scanline >= -1 && self.scanline < 240 {
             // Visible Frame & Pre-render line
-            if self.scanline == 0 && self.cycle == 0 {
-                self.cycle = 1; // Skip cycle 0 on first line (odd frames mechanism skipped for simplicity)
+            // Odd frame skip cycle 0 on scanline 0
+            if self.scanline == 0
+                && self.cycle == 0
+                && self.odd_frame
+                && self.mask.bits() & 0x18 != 0
+            {
+                self.cycle = 1;
             }
 
             if self.scanline == -1 && self.cycle == 1 {
@@ -496,11 +513,14 @@ impl PPU {
         }
 
         if self.scanline == 241 && self.cycle == 1 {
-            self.status.insert(Status::VBLANK);
-            if self.ctrl.contains(Control::ENABLE_NMI) {
-                self.nmi_interrupt = true;
+            if !self.vblank_suppress {
+                self.status.insert(Status::VBLANK);
+                if self.ctrl.contains(Control::ENABLE_NMI) {
+                    self.nmi_interrupt = true;
+                }
             }
         }
+        self.vblank_suppress = false;
 
         // Advance
         self.cycle += 1;
@@ -510,6 +530,7 @@ impl PPU {
             if self.scanline >= 261 {
                 self.scanline = -1;
                 self.frame_count += 1;
+                self.odd_frame = !self.odd_frame;
             }
         }
     }
