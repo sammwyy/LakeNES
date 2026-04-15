@@ -20,9 +20,14 @@ pub struct Bus {
     pub joypad1: Option<Joypad>,
     pub joypad2: Option<Joypad>,
 
+    /// Last value on the CPU data bus (open bus). Write-only APU ports,
+    /// CPU space $4018–$40FF (no chip select), and similar reads expose this.
+    cpu_data_bus: u8,
+
     // Status
     nmi_pending: bool,
     irq_pending: bool,
+    cpu_stall_cycles: u64,
 }
 
 impl Bus {
@@ -34,8 +39,10 @@ impl Bus {
             apu: None,
             joypad1: None,
             joypad2: None,
+            cpu_data_bus: 0,
             nmi_pending: false,
             irq_pending: false,
+            cpu_stall_cycles: 0,
         }
     }
 
@@ -64,7 +71,7 @@ impl Bus {
     }
 
     pub fn read(&mut self, addr: u16) -> u8 {
-        match addr {
+        let value = match addr {
             0x0000..=0x1FFF => {
                 let mirrored = addr & 0x07FF;
                 self.ram.as_mut().unwrap().read(mirrored)
@@ -74,38 +81,53 @@ impl Bus {
                     if let Some(rom) = &mut self.rom {
                         ppu.read(addr, &mut *rom.mapper)
                     } else {
-                        0
+                        self.cpu_data_bus
                     }
                 } else {
-                    0
+                    self.cpu_data_bus
                 }
             }
+            // APU write-only registers ($4000–$4013) and $4014: bus not driven.
+            0x4000..=0x4014 => self.cpu_data_bus,
             0x4015 => {
                 if let Some(ref mut apu) = self.apu {
-                    apu.read(addr)
+                    // Bit 5 is not driven by the APU; comes from open bus.
+                    (apu.read(addr) & 0xDF) | (self.cpu_data_bus & 0x20)
                 } else {
-                    0
+                    self.cpu_data_bus
                 }
             }
             0x4016 => {
                 if let Some(ref mut joypad) = self.joypad1 {
-                    joypad.read()
+                    (joypad.read() & 0x01) | (self.cpu_data_bus & 0xFE)
                 } else {
-                    0
+                    self.cpu_data_bus
                 }
             }
-            0x4020..=0xFFFF => {
+            0x4017 => {
+                if let Some(ref mut joypad) = self.joypad2 {
+                    (joypad.read() & 0x01) | (self.cpu_data_bus & 0xFE)
+                } else {
+                    // No controller: full open bus (forcing D0 high breaks cpu_exec_space tests).
+                    self.cpu_data_bus
+                }
+            }
+            // Unallocated CPU I/O ($4018–$40FF): nothing drives the bus (nesdev + cpu_exec_space).
+            0x4018..=0x40FF => self.cpu_data_bus,
+            0x4100..=0xFFFF => {
                 if let Some(ref mut rom) = self.rom {
                     rom.mapper.read_prg(addr)
                 } else {
-                    0
+                    self.cpu_data_bus
                 }
             }
-            _ => 0,
-        }
+        };
+        self.cpu_data_bus = value;
+        value
     }
 
     pub fn write(&mut self, addr: u16, value: u8) {
+        self.cpu_data_bus = value;
         match addr {
             0x0000..=0x1FFF => {
                 let mirrored = addr & 0x07FF;
@@ -127,6 +149,9 @@ impl Bus {
                         ppu.oam_addr = ppu.oam_addr.wrapping_add(1);
                     }
                 }
+                // OAM DMA stalls CPU for 513 or 514 cycles depending on parity.
+                // We model 513 here; parity refinement can be layered on top later.
+                self.add_cpu_stall_cycles(513);
             }
             0x4016 => {
                 if let Some(ref mut joypad) = self.joypad1 {
@@ -199,5 +224,15 @@ impl Bus {
         let pending = self.irq_pending;
         self.irq_pending = false;
         pending
+    }
+
+    pub fn add_cpu_stall_cycles(&mut self, cycles: u64) {
+        self.cpu_stall_cycles = self.cpu_stall_cycles.saturating_add(cycles);
+    }
+
+    pub fn take_cpu_stall_cycles(&mut self) -> u64 {
+        let stall = self.cpu_stall_cycles;
+        self.cpu_stall_cycles = 0;
+        stall
     }
 }

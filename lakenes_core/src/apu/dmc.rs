@@ -106,14 +106,16 @@ impl DMC {
 
     /// Should be called once per CPU cycle (after step_timer). Fetches the next
     /// sample byte from memory when the sample buffer is empty and bytes remain.
-    pub fn step_reader<F>(&mut self, read_mem: &mut F)
+    pub fn step_reader<F>(&mut self, read_mem: &mut F) -> bool
     where
         F: FnMut(u16) -> u8,
     {
+        let mut fetched = false;
         if self.sample_buffer.is_none() && self.bytes_remaining > 0 {
             // DMA stall would happen here in accurate emulators; we skip the stall
             let val = read_mem(self.current_address);
             self.sample_buffer = Some(val);
+            fetched = true;
 
             // Advance address, wrapping from 0xFFFF back to 0x8000
             if self.current_address == 0xFFFF {
@@ -133,5 +135,6 @@ impl DMC {
                 }
             }
         }
+        fetched
     }
 }

@@ -129,11 +129,11 @@ pub fn sta(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         }
         0x9D => {
             cpu.cycles += 5;
-            get_address_absolute_x(cpu, bus).0
+            get_address_absolute_x_write(cpu, bus)
         }
         0x99 => {
             cpu.cycles += 5;
-            get_address_absolute_y(cpu, bus).0
+            get_address_absolute_y_write(cpu, bus)
         }
         0x81 => {
             cpu.cycles += 6;
@@ -141,7 +141,7 @@ pub fn sta(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         }
         0x91 => {
             cpu.cycles += 6;
-            get_address_indirect_y(cpu, bus).0
+            get_address_indirect_y_write(cpu, bus)
         }
         _ => unreachable!(),
     };

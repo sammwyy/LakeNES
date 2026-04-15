@@ -3,12 +3,16 @@ use alloc::boxed::Box;
 pub mod mapper0;
 pub mod mapper1;
 pub mod mapper2;
+pub mod mapper3;
 pub mod mapper4;
+pub mod mapper7;
 
 use mapper0::Mapper0;
 use mapper1::Mapper1;
 use mapper2::Mapper2;
+use mapper3::Mapper3;
 use mapper4::Mapper4;
+use mapper7::Mapper7;
 
 const NES_HEADER_SIZE: usize = 16;
 const PRG_ROM_BANK_SIZE: usize = 16384;
@@ -33,6 +37,9 @@ pub trait Mapper {
     fn write_prg(&mut self, addr: u16, data: u8);
     fn read_chr(&mut self, addr: u16) -> u8;
     fn write_chr(&mut self, addr: u16, data: u8);
+    /// PPU-driven address bus (0x0000–0x3FFF). Used by MMC3 for A12 IRQ timing;
+    /// nametable/attribute fetches must be included so A12 can go low between pattern fetches.
+    fn ppu_bus_address(&mut self, _addr: u16) {}
     fn irq_flag(&self) -> bool {
         false
     }
@@ -110,7 +117,15 @@ impl ROM {
             )),
             1 => Box::new(Mapper1::new(prg_rom, chr_rom)),
             2 => Box::new(Mapper2::new(prg_rom, chr_rom, prg_banks, mirroring_mode)),
+            3 => Box::new(Mapper3::new(
+                prg_rom,
+                chr_rom,
+                prg_banks,
+                chr_banks == 0,
+                mirroring_mode,
+            )),
             4 => Box::new(Mapper4::new(prg_rom, chr_rom)),
+            7 => Box::new(Mapper7::new(prg_rom, chr_rom)),
             _ => {
                 log::warn!(
                     "Mapper {} not implemented, falling back to Mapper 0",

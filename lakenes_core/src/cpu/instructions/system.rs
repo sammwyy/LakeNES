@@ -3,7 +3,9 @@ use crate::bus::Bus;
 use crate::cpu::CPU;
 
 pub fn brk(cpu: &mut CPU, bus: &mut Bus) {
-    cpu.pc += 1;
+    // Cycle 2: read the byte after BRK (ignored on data path, but hits the bus like other 1-byte ops).
+    let _ = bus.read(cpu.pc);
+    cpu.pc = cpu.pc.wrapping_add(1);
     cpu.push_word(bus, cpu.pc);
     cpu.push_byte(bus, cpu.p | FLAG_B | FLAG_U);
     cpu.set_flag(FLAG_I, true);
@@ -41,14 +43,20 @@ pub fn jsr(cpu: &mut CPU, bus: &mut Bus) {
 }
 
 pub fn rti(cpu: &mut CPU, bus: &mut Bus) {
+    // Cycle 2: fetch and discard the byte following the opcode (same as RTS; matters for I/O).
+    let _ = bus.read(cpu.pc);
+    cpu.pc = cpu.pc.wrapping_add(1);
     cpu.cycles += 6;
     cpu.p = (cpu.pop_byte(bus) & !FLAG_B) | FLAG_U;
     cpu.pc = cpu.pop_word(bus);
 }
 
 pub fn rts(cpu: &mut CPU, bus: &mut Bus) {
+    // Cycle 2: fetch and discard the byte following the opcode (matters for PPU I/O open-bus).
+    let _ = bus.read(cpu.pc);
+    cpu.pc = cpu.pc.wrapping_add(1);
     cpu.cycles += 6;
-    cpu.pc = cpu.pop_word(bus) + 1;
+    cpu.pc = cpu.pop_word(bus).wrapping_add(1);
 }
 
 pub fn nop(cpu: &mut CPU) {

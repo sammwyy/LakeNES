@@ -30,7 +30,7 @@ pub fn asl(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
                 }
                 0x1E => {
                     cpu.cycles += 7;
-                    let addr = get_address_absolute_x(cpu, bus).0;
+                    let addr = get_address_absolute_x_write(cpu, bus);
                     (addr, bus.read(addr))
                 }
                 _ => unreachable!(),
@@ -38,7 +38,7 @@ pub fn asl(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
 
             let carry = value & 0x80 != 0;
             let result = value << 1;
-            bus.write(addr, result);
+            super::rmw_store(bus, addr, value, result);
             cpu.set_flag(FLAG_C, carry);
             cpu.update_zero_negative(result);
         }
@@ -73,7 +73,7 @@ pub fn lsr(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
                 }
                 0x5E => {
                     cpu.cycles += 7;
-                    let addr = get_address_absolute_x(cpu, bus).0;
+                    let addr = get_address_absolute_x_write(cpu, bus);
                     (addr, bus.read(addr))
                 }
                 _ => unreachable!(),
@@ -81,7 +81,7 @@ pub fn lsr(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
 
             let carry = value & 0x01 != 0;
             let result = value >> 1;
-            bus.write(addr, result);
+            super::rmw_store(bus, addr, value, result);
             cpu.set_flag(FLAG_C, carry);
             cpu.update_zero_negative(result);
         }
@@ -117,7 +117,7 @@ pub fn rol(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
                 }
                 0x3E => {
                     cpu.cycles += 7;
-                    let addr = get_address_absolute_x(cpu, bus).0;
+                    let addr = get_address_absolute_x_write(cpu, bus);
                     (addr, bus.read(addr))
                 }
                 _ => unreachable!(),
@@ -125,7 +125,7 @@ pub fn rol(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
 
             let new_carry = value & 0x80 != 0;
             let result = (value << 1) | old_carry;
-            bus.write(addr, result);
+            super::rmw_store(bus, addr, value, result);
             cpu.set_flag(FLAG_C, new_carry);
             cpu.update_zero_negative(result);
         }
@@ -161,7 +161,7 @@ pub fn ror(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
                 }
                 0x7E => {
                     cpu.cycles += 7;
-                    let addr = get_address_absolute_x(cpu, bus).0;
+                    let addr = get_address_absolute_x_write(cpu, bus);
                     (addr, bus.read(addr))
                 }
                 _ => unreachable!(),
@@ -169,7 +169,7 @@ pub fn ror(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
 
             let new_carry = value & 0x01 != 0;
             let result = (value >> 1) | (old_carry << 7);
-            bus.write(addr, result);
+            super::rmw_store(bus, addr, value, result);
             cpu.set_flag(FLAG_C, new_carry);
             cpu.update_zero_negative(result);
         }

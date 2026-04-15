@@ -166,14 +166,7 @@ impl CPU {
             0x78 => sei(self),
             0x00 => brk(self, bus),
             0xEA => nop(self),
-            _ => {
-                log::warn!(
-                    "Unknown opcode: 0x{:02X} at PC: 0x{:04X}",
-                    opcode,
-                    self.pc - 1
-                );
-                self.cycles += 2;
-            }
+            _ => illegal::execute_illegal(self, bus, opcode),
         }
     }
 

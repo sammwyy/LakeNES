@@ -147,6 +147,7 @@ pub struct PPU {
 
     // Data Buffer
     data_buffer: u8,
+    open_bus: u8,
 
     // Background Rendering
     bg_next_tile_id: u8,
@@ -161,6 +162,8 @@ pub struct PPU {
 
     // Sprites
     scanline_sprites: Vec<u8>, // Indices of sprites on this scanline
+    secondary_oam: [u8; 32],
+    sprite_fetch_index: usize,
     sprite_shifter_pattern_lo: [u8; 8],
     sprite_shifter_pattern_hi: [u8; 8],
     sprite_zero_hit_possible: bool,
@@ -175,6 +178,42 @@ pub struct PPU {
 }
 
 impl PPU {
+    #[inline(always)]
+    fn mirror_vram_addr(addr: u16, mode: Mirroring) -> usize {
+        let addr = addr & 0x0FFF;
+        let mirrored = match mode {
+            Mirroring::Horizontal => {
+                if addr < 0x0800 {
+                    addr & 0x03FF
+                } else {
+                    (addr & 0x03FF) + 0x400
+                }
+            }
+            Mirroring::Vertical => addr & 0x07FF,
+            Mirroring::OneScreenLow => addr & 0x03FF,
+            Mirroring::OneScreenHigh => (addr & 0x03FF) + 0x400,
+        };
+        mirrored as usize
+    }
+
+    #[inline(always)]
+    fn palette_addr(addr: u16) -> usize {
+        let mut addr = addr & 0x001F;
+        if addr == 0x0010 {
+            addr = 0x0000;
+        }
+        if addr == 0x0014 {
+            addr = 0x0004;
+        }
+        if addr == 0x0018 {
+            addr = 0x0008;
+        }
+        if addr == 0x001C {
+            addr = 0x000C;
+        }
+        addr as usize
+    }
+
     pub fn new() -> Self {
         Self {
             palette_table: [0; 32],
@@ -194,6 +233,7 @@ impl PPU {
             fine_x: 0,
             w_toggle: false,
             data_buffer: 0,
+            open_bus: 0,
             bg_next_tile_id: 0,
             bg_next_tile_attr: 0,
             bg_next_tile_lsb: 0,
@@ -204,6 +244,8 @@ impl PPU {
             bg_shifter_attrib_hi: 0,
 
             scanline_sprites: Vec::with_capacity(8),
+            secondary_oam: [0xFF; 32],
+            sprite_fetch_index: 0,
             sprite_shifter_pattern_lo: [0; 8],
             sprite_shifter_pattern_hi: [0; 8],
             sprite_zero_hit_possible: false,
@@ -233,9 +275,10 @@ impl PPU {
 
     // $2002 PPUSTATUS
     fn read_status(&mut self) -> u8 {
-        let res = (self.status.bits() & 0xE0) | (self.data_buffer & 0x1F);
+        let res = (self.status.bits() & 0xE0) | (self.open_bus & 0x1F);
         self.status.remove(Status::VBLANK);
         self.w_toggle = false;
+        self.open_bus = res;
 
         // VBlank suppression: if read happens exactly when VBlank would be set,
         // it returns 0 for bit 7 and prevents NMI.
@@ -311,6 +354,7 @@ impl PPU {
             1
         };
         self.v_ram.reg = (self.v_ram.reg + inc) & 0x7FFF;
+        self.open_bus = data;
 
         data
     }
@@ -321,48 +365,17 @@ impl PPU {
 
     fn ppu_write(&mut self, addr: u16, value: u8, mapper: &mut dyn Mapper) {
         let addr = addr & 0x3FFF;
+        mapper.ppu_bus_address(addr);
         match addr {
             0x0000..=0x1FFF => {
                 mapper.write_chr(addr, value);
             }
             0x2000..=0x3EFF => {
-                // Nametables
-                let addr = addr & 0x0FFF;
-                let mode = mapper.mirroring();
-                let mirrored = match mode {
-                    Mirroring::Horizontal => {
-                        // 000-3FF -> 000, 400-7FF -> 000, 800-BFF -> 400, C00-FFF -> 400
-                        if addr < 0x0800 {
-                            addr & 0x03FF
-                        } else {
-                            (addr & 0x03FF) + 0x400
-                        }
-                    }
-                    Mirroring::Vertical => {
-                        // 000-3FF -> 000, 400-7FF -> 400, 800-BFF -> 000, C00-FFF -> 400
-                        addr & 0x07FF
-                    }
-                    Mirroring::OneScreenLow => addr & 0x03FF,
-                    Mirroring::OneScreenHigh => (addr & 0x03FF) + 0x400,
-                };
-                self.vram[mirrored as usize] = value;
+                let mirrored = Self::mirror_vram_addr(addr, mapper.mirroring());
+                self.vram[mirrored] = value;
             }
             0x3F00..=0x3FFF => {
-                // Palettes
-                let mut addr = addr & 0x001F;
-                if addr == 0x0010 {
-                    addr = 0x0000;
-                }
-                if addr == 0x0014 {
-                    addr = 0x0004;
-                }
-                if addr == 0x0018 {
-                    addr = 0x0008;
-                }
-                if addr == 0x001C {
-                    addr = 0x000C;
-                }
-                self.palette_table[addr as usize] = value;
+                self.palette_table[Self::palette_addr(addr)] = value;
             }
             _ => {}
         }
@@ -370,40 +383,15 @@ impl PPU {
 
     fn ppu_read(&self, addr: u16, mapper: &mut dyn Mapper) -> u8 {
         let addr = addr & 0x3FFF;
+        mapper.ppu_bus_address(addr);
         match addr {
             0x0000..=0x1FFF => mapper.read_chr(addr),
             0x2000..=0x3EFF => {
-                let addr = addr & 0x0FFF;
-                let mode = mapper.mirroring();
-                let mirrored = match mode {
-                    Mirroring::Horizontal => {
-                        if addr < 0x0800 {
-                            addr & 0x03FF
-                        } else {
-                            (addr & 0x03FF) + 0x400
-                        }
-                    }
-                    Mirroring::Vertical => addr & 0x07FF,
-                    Mirroring::OneScreenLow => addr & 0x03FF,
-                    Mirroring::OneScreenHigh => (addr & 0x03FF) + 0x400,
-                };
-                self.vram[mirrored as usize]
+                let mirrored = Self::mirror_vram_addr(addr, mapper.mirroring());
+                self.vram[mirrored]
             }
             0x3F00..=0x3FFF => {
-                let mut addr = addr & 0x001F;
-                if addr == 0x0010 {
-                    addr = 0x0000;
-                }
-                if addr == 0x0014 {
-                    addr = 0x0004;
-                }
-                if addr == 0x0018 {
-                    addr = 0x0008;
-                }
-                if addr == 0x001C {
-                    addr = 0x000C;
-                }
-                self.palette_table[addr as usize]
+                self.palette_table[Self::palette_addr(addr)]
             }
             _ => 0,
         }
@@ -500,10 +488,19 @@ impl PPU {
                 self.transfer_address_y();
             }
 
-            // Foreground Rendering (Sprites) - Simplified for now
-            // Just clearing at 257 for next line
-            if self.cycle == 257 && self.scanline >= 0 {
-                self.evaluate_sprites(mapper);
+            if self.cycle == 256 {
+                self.evaluate_sprites();
+                self.sprite_fetch_index = 0;
+                for i in 0..8 {
+                    self.sprite_shifter_pattern_lo[i] = 0;
+                    self.sprite_shifter_pattern_hi[i] = 0;
+                }
+            }
+
+            // Fetch sprite pattern bytes during sprite fetch window (257..320),
+            // one sprite slot every 8 PPU cycles.
+            if self.cycle >= 257 && self.cycle <= 320 && ((self.cycle - 257) % 8 == 0) {
+                self.fetch_next_sprite_pattern(mapper);
             }
         }
 
@@ -532,6 +529,12 @@ impl PPU {
                 self.frame_count += 1;
                 self.odd_frame = !self.odd_frame;
             }
+        }
+    }
+
+    pub fn step_many(&mut self, cycles: usize, mapper: &mut dyn Mapper) {
+        for _ in 0..cycles {
+            self.step(mapper);
         }
     }
 
@@ -727,94 +730,120 @@ impl PPU {
         NES_PALETTE[pal_idx & 0x3F]
     }
 
-    fn evaluate_sprites(&mut self, mapper: &mut dyn Mapper) {
-        // Clear for next line
+    fn evaluate_sprites(&mut self) {
+        // Evaluate sprites for next scanline and fill secondary OAM.
         self.scanline_sprites.clear();
+        self.secondary_oam = [0xFF; 32];
+        self.status.remove(Status::SPRITE_OVERFLOW);
+
         let sprite_height = if self.ctrl.contains(Control::SPRITE_SIZE) {
             16
         } else {
             8
         };
-        // Evaluate for NEXT scanline
-        let scanline = self.scanline;
-        let target_line = scanline + 1;
+
+        let target_line = self.scanline + 1;
         if target_line >= 240 {
             return;
         }
 
-        let mut count = 0;
-        self.sprite_zero_hit_possible = false; // Will be set if sprite 0 is in next line
+        let mut found = 0usize;
+        self.sprite_zero_hit_possible = false;
 
         for i in 0..64 {
             let y = self.oam_data[i * 4] as i16;
             let diff = target_line - y - 1;
             if diff >= 0 && diff < sprite_height {
-                if count < 8 {
+                if found < 8 {
+                    let base = found * 4;
+                    self.secondary_oam[base] = self.oam_data[i * 4];
+                    self.secondary_oam[base + 1] = self.oam_data[i * 4 + 1];
+                    self.secondary_oam[base + 2] = self.oam_data[i * 4 + 2];
+                    self.secondary_oam[base + 3] = self.oam_data[i * 4 + 3];
+                    self.scanline_sprites.push(i as u8);
                     if i == 0 {
                         self.sprite_zero_hit_possible = true;
                     }
-                    self.scanline_sprites.push(i as u8);
-
-                    // Fetch Data immediately (cheat)
-                    let attr = self.oam_data[i * 4 + 2];
-                    let tile_idx = self.oam_data[i * 4 + 1];
-
-                    let (tile_addr_lo, tile_addr_hi) = if sprite_height == 8 {
-                        // 8x8
-                        let table = if self.ctrl.contains(Control::SPRITE_PATTERN) {
-                            0x1000
-                        } else {
-                            0x0000
-                        };
-                        let row = if (attr & 0x80) != 0 { 7 - diff } else { diff };
-                        let lo = table | (tile_idx as u16) << 4 | row as u16;
-                        (lo, lo + 8)
-                    } else {
-                        // 8x16
-                        // Logic: Even = $0000, Odd = $1000. Index = tile_idx & 0xFE
-                        let table = ((tile_idx & 1) as u16) * 0x1000;
-                        let idx = tile_idx & 0xFE;
-                        let mut row = diff;
-                        if (attr & 0x80) != 0 {
-                            row = 15 - row;
-                        }
-
-                        let lo = if row < 8 {
-                            table | (idx as u16) << 4 | row as u16
-                        } else {
-                            table | ((idx + 1) as u16) << 4 | (row - 8) as u16
-                        };
-                        (lo, lo + 8)
-                    };
-
-                    let mut pat_lo = self.ppu_read(tile_addr_lo, mapper);
-                    let mut pat_hi = self.ppu_read(tile_addr_hi, mapper);
-
-                    // Flip Horizontally?
-                    if (attr & 0x40) != 0 {
-                        // Reverse bits
-                        pat_lo = pat_lo.reverse_bits();
-                        pat_hi = pat_hi.reverse_bits();
-                    }
-
-                    self.sprite_shifter_pattern_lo[count] = pat_lo;
-                    self.sprite_shifter_pattern_hi[count] = pat_hi;
-                    count += 1;
+                    found += 1;
+                } else {
+                    self.status.insert(Status::SPRITE_OVERFLOW);
+                    break;
                 }
             }
         }
     }
 
+    fn fetch_next_sprite_pattern(&mut self, mapper: &mut dyn Mapper) {
+        if self.sprite_fetch_index >= self.scanline_sprites.len() || self.sprite_fetch_index >= 8 {
+            return;
+        }
+
+        let oam_idx = self.scanline_sprites[self.sprite_fetch_index] as usize;
+        let target_line = self.scanline + 1;
+        let y = self.oam_data[oam_idx * 4] as i16;
+        let attr = self.oam_data[oam_idx * 4 + 2];
+        let tile_idx = self.oam_data[oam_idx * 4 + 1];
+        let sprite_height = if self.ctrl.contains(Control::SPRITE_SIZE) {
+            16
+        } else {
+            8
+        };
+
+        let mut row = target_line - y - 1;
+        if row < 0 || row >= sprite_height {
+            self.sprite_fetch_index += 1;
+            return;
+        }
+        if (attr & 0x80) != 0 {
+            row = sprite_height - 1 - row;
+        }
+
+        let (tile_addr_lo, tile_addr_hi) = if sprite_height == 8 {
+            let table = if self.ctrl.contains(Control::SPRITE_PATTERN) {
+                0x1000
+            } else {
+                0x0000
+            };
+            let lo = table | (tile_idx as u16) << 4 | row as u16;
+            (lo, lo + 8)
+        } else {
+            let table = ((tile_idx & 1) as u16) * 0x1000;
+            let idx = tile_idx & 0xFE;
+            let lo = if row < 8 {
+                table | (idx as u16) << 4 | row as u16
+            } else {
+                table | ((idx + 1) as u16) << 4 | (row as u16 - 8)
+            };
+            (lo, lo + 8)
+        };
+
+        let mut pat_lo = self.ppu_read(tile_addr_lo, mapper);
+        let mut pat_hi = self.ppu_read(tile_addr_hi, mapper);
+        if (attr & 0x40) != 0 {
+            pat_lo = pat_lo.reverse_bits();
+            pat_hi = pat_hi.reverse_bits();
+        }
+
+        self.sprite_shifter_pattern_lo[self.sprite_fetch_index] = pat_lo;
+        self.sprite_shifter_pattern_hi[self.sprite_fetch_index] = pat_hi;
+        self.sprite_fetch_index += 1;
+    }
+
     pub fn read(&mut self, addr: u16, mapper: &mut dyn Mapper) -> u8 {
         match addr & 0x0007 {
             0x0002 => self.read_status(),
-            0x0004 => self.oam_data[self.oam_addr as usize],
+            0x0004 => {
+                let value = self.oam_data[self.oam_addr as usize];
+                self.open_bus = value;
+                value
+            }
             0x0007 => self.read_ppu_data(mapper),
-            _ => 0,
+            _ => self.open_bus,
         }
     }
 
     pub fn write(&mut self, addr: u16, value: u8, mapper: &mut dyn Mapper) {
+        self.open_bus = value;
         match addr & 0x0007 {
             0x0000 => self.write_ctrl(value),
             0x0001 => self.write_mask(value),

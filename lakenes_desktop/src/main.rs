@@ -3,6 +3,7 @@ use lakenes_core::NES;
 use minifb::{Key, Window, WindowOptions};
 use std::fs;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use ringbuf::HeapRb;
@@ -72,11 +73,18 @@ fn main() {
 
     stream.play().expect("Failed to start audio stream");
 
+    if let Some(ref mut nes_instance) = nes {
+        nes_instance.set_audio_sample_rate(sample_rate);
+        nes_instance.set_audio_gain(0.4);
+    }
+
     // Pre-calculate samples per cycle
     let cpu_frequency = 1789772.7272; // NTSC CPU Frequency
     let samples_per_cycle: f64 = sample_rate / cpu_frequency;
     let mut sample_accumulator = 0.0;
     let empty_buffer = vec![0u32; 256 * 240];
+    let frame_time = Duration::from_nanos(1_000_000_000u64 / 60);
+    let mut next_frame_deadline = Instant::now();
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         // Handle ROM loading via hotkey Ctrl+O
@@ -90,6 +98,10 @@ fn main() {
                 match fs::read(&path) {
                     Ok(data) => {
                         nes = Some(NES::new(&data));
+                        if let Some(ref mut nes_instance) = nes {
+                            nes_instance.set_audio_sample_rate(sample_rate);
+                            nes_instance.set_audio_gain(0.4);
+                        }
                         log::info!("Loaded ROM: {:?}", path);
                     }
                     Err(e) => log::error!("Failed to read ROM: {}", e),
@@ -134,47 +146,39 @@ fn main() {
             // However, we can use 'nes_instance.bus' components.
 
             while cycles_this_frame < 29780 {
-                let cpu_cycles = nes_instance.cpu.step(&mut nes_instance.bus);
+                let cpu_cycles = nes_instance.step_cycle();
                 cycles_this_frame += cpu_cycles;
 
-                let bus = &mut nes_instance.bus;
-
-                // Optimized PPU stepping
-                if let Some(ref mut ppu) = bus.ppu {
-                    if let Some(ref mut rom) = bus.rom {
-                        for _ in 0..(cpu_cycles * 3) {
-                            ppu.step(&mut *rom.mapper);
-                        }
-                    }
-                }
-
-                // Optimized APU stepping
-                let mut apu = bus.apu.take();
-                if let Some(ref mut apu_ref) = apu {
-                    for _ in 0..cpu_cycles {
-                        apu_ref.step(|addr| bus.read(addr));
-                        sample_accumulator += samples_per_cycle;
-                        if sample_accumulator >= 1.0 {
-                            sample_accumulator -= 1.0;
-                            let sample = apu_ref.output_sample() * 0.4;
-
-                            // Audio sync: wait if buffer is full with high responsivity
-                            while producer.vacant_len() < 128 {
-                                std::thread::yield_now();
-                            }
+                for _ in 0..cpu_cycles {
+                    sample_accumulator += samples_per_cycle;
+                    if sample_accumulator >= 1.0 {
+                        sample_accumulator -= 1.0;
+                        let sample = nes_instance.get_audio_sample();
+                        if producer.vacant_len() > 0 {
                             let _ = producer.try_push(sample);
                         }
                     }
                 }
-                bus.apu = apu;
+            }
 
-                bus.check_ppu_nmi();
-                bus.check_mapper_irq();
+            // Keep a small refill burst to reduce underflow clicks when the
+            // emulation and audio callback cadence diverge.
+            let target_fill = 2048usize;
+            while producer.vacant_len() > 0 && producer.occupied_len() < target_fill {
+                let _ = producer.try_push(nes_instance.get_audio_sample());
             }
 
             window
                 .update_with_buffer(nes_instance.get_frame_buffer(), 256, 240)
                 .unwrap();
+
+            next_frame_deadline += frame_time;
+            let now = Instant::now();
+            if next_frame_deadline > now {
+                std::thread::sleep(next_frame_deadline - now);
+            } else {
+                next_frame_deadline = now;
+            }
         } else {
             // No NES loaded, just update window with black buffer
             window.update_with_buffer(&empty_buffer, 256, 240).unwrap();

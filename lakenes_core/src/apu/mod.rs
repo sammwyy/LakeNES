@@ -179,9 +179,18 @@ pub struct APU {
     pub dmc: DMC,
     frame_counter: FrameCounter,
     filters: [AudioFilter; 3],
+    dmc_cpu_stall_cycles: u64,
 }
 
 impl APU {
+    fn make_filters(sample_rate: f32) -> [AudioFilter; 3] {
+        [
+            AudioFilter::high_pass(sample_rate, 90.0),
+            AudioFilter::high_pass(sample_rate, 440.0),
+            AudioFilter::low_pass(sample_rate, 14_000.0),
+        ]
+    }
+
     pub fn new() -> Self {
         Self {
             pulse1: Pulse::new(1),
@@ -190,11 +199,14 @@ impl APU {
             noise: Noise::new(),
             dmc: DMC::new(),
             frame_counter: FrameCounter::new(),
-            filters: [
-                AudioFilter::high_pass(44_100.0, 90.0),
-                AudioFilter::high_pass(44_100.0, 440.0),
-                AudioFilter::low_pass(44_100.0, 14_000.0),
-            ],
+            filters: Self::make_filters(44_100.0),
+            dmc_cpu_stall_cycles: 0,
+        }
+    }
+
+    pub fn set_output_sample_rate(&mut self, sample_rate: f32) {
+        if sample_rate > 0.0 {
+            self.filters = Self::make_filters(sample_rate);
         }
     }
 
@@ -310,13 +322,19 @@ impl APU {
             self.pulse2.step_timer();
         }
 
-        // Noise and Triangle clock every cycle
-        self.noise.step_timer();
+        // Noise should follow the same half-rate timer stepping as pulse channels.
+        if odd {
+            self.noise.step_timer();
+        }
 
         // DMC: reader first if channel is enabled and has samples,
         // but timer always clocks to maintain internal phase.
         if self.dmc.enabled {
-            self.dmc.step_reader(&mut read_mem);
+            if self.dmc.step_reader(&mut read_mem) {
+                // DMC DMA read steals CPU bus cycles.
+                // Fine-grain parity/phase is not modeled yet.
+                self.dmc_cpu_stall_cycles = self.dmc_cpu_stall_cycles.saturating_add(4);
+            }
         }
         self.dmc.step_timer();
 
@@ -375,6 +393,12 @@ impl APU {
             out = f.tick(out);
         }
         out
+    }
+
+    pub fn take_dmc_cpu_stall_cycles(&mut self) -> u64 {
+        let stall = self.dmc_cpu_stall_cycles;
+        self.dmc_cpu_stall_cycles = 0;
+        stall
     }
 }
 

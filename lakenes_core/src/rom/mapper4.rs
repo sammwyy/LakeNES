@@ -25,10 +25,10 @@ pub struct Mapper4 {
     num_prg_banks: usize,
     num_chr_banks: usize,
 
-    // A12 Filter
+    /// Last A12 line state seen on the PPU bus (bit 12 of address).
     prev_a12: bool,
-    // We can't really time-filter without cycles.
-    // We'll trust the access pattern isn't too noisy for now.
+    /// PPU bus accesses with A12 low since last A12-high access (MMC3 needs ~3 low before a rising edge clocks the IRQ counter).
+    a12_low_streak: u8,
 }
 
 impl Mapper4 {
@@ -57,6 +57,7 @@ impl Mapper4 {
             num_prg_banks,
             num_chr_banks,
             prev_a12: false,
+            a12_low_streak: 0,
         }
     }
 
@@ -71,15 +72,6 @@ impl Mapper4 {
         if self.irq_counter == 0 && self.irq_enabled {
             self.irq_active = true;
         }
-    }
-
-    fn check_a12(&mut self, addr: u16) {
-        let a12 = (addr & 0x1000) != 0;
-        // Rising edge
-        if a12 && !self.prev_a12 {
-            self.clock_irq();
-        }
-        self.prev_a12 = a12;
     }
 
     fn read_prg_bank(&self, addr: u16) -> usize {
@@ -120,6 +112,9 @@ impl Mapper4 {
     }
 
     fn read_chr_bank(&self, addr: u16) -> usize {
+        if self.num_chr_banks == 0 {
+            return 0;
+        }
         // 1KB Banks
         // R0, R1 = 2KB blocks (index & FE)
         // R2, R3, R4, R5 = 1KB blocks
@@ -218,7 +213,6 @@ impl Mapper for Mapper4 {
     }
 
     fn read_chr(&mut self, addr: u16) -> u8 {
-        self.check_a12(addr);
         if self.chr_rom.is_empty() {
             return 0;
         }
@@ -234,7 +228,6 @@ impl Mapper for Mapper4 {
     }
 
     fn write_chr(&mut self, addr: u16, data: u8) {
-        self.check_a12(addr);
         if self.chr_rom.is_empty() {
             return;
         }
@@ -253,5 +246,23 @@ impl Mapper for Mapper4 {
 
     fn mirroring(&self) -> Mirroring {
         self.mirroring
+    }
+
+    fn ppu_bus_address(&mut self, addr: u16) {
+        let addr = addr & 0x3FFF;
+        // Palette reads are internal to the PPU; do not treat as cartridge bus activity for A12.
+        if addr >= 0x3F00 {
+            return;
+        }
+        let a12 = (addr & 0x1000) != 0;
+        if a12 && !self.prev_a12 && self.a12_low_streak >= 3 {
+            self.clock_irq();
+        }
+        if !a12 {
+            self.a12_low_streak = self.a12_low_streak.saturating_add(1);
+        } else {
+            self.a12_low_streak = 0;
+        }
+        self.prev_a12 = a12;
     }
 }

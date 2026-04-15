@@ -21,14 +21,14 @@ pub fn dec(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         }
         0xDE => {
             cpu.cycles += 7;
-            let addr = get_address_absolute_x(cpu, bus).0;
+            let addr = get_address_absolute_x_write(cpu, bus);
             (addr, bus.read(addr))
         }
         _ => unreachable!(),
     };
 
     let result = value.wrapping_sub(1);
-    bus.write(addr, result);
+    super::rmw_store(bus, addr, value, result);
     cpu.update_zero_negative(result);
 }
 
@@ -63,14 +63,14 @@ pub fn inc(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         }
         0xFE => {
             cpu.cycles += 7;
-            let addr = get_address_absolute_x(cpu, bus).0;
+            let addr = get_address_absolute_x_write(cpu, bus);
             (addr, bus.read(addr))
         }
         _ => unreachable!(),
     };
 
     let result = value.wrapping_add(1);
-    bus.write(addr, result);
+    super::rmw_store(bus, addr, value, result);
     cpu.update_zero_negative(result);
 }
 
