@@ -16,37 +16,37 @@ pub fn cmp(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         0xC5 => {
             cpu.cycles += 3;
             let addr = get_address_zeropage(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xD5 => {
             cpu.cycles += 4;
             let addr = get_address_zeropage_x(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xCD => {
             cpu.cycles += 4;
             let addr = get_address_absolute(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xDD => {
             let (addr, crossed) = get_address_absolute_x(cpu, bus);
             cpu.cycles += if crossed { 5 } else { 4 };
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xD9 => {
             let (addr, crossed) = get_address_absolute_y(cpu, bus);
             cpu.cycles += if crossed { 5 } else { 4 };
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xC1 => {
             cpu.cycles += 6;
             let addr = get_address_indirect_x(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xD1 => {
             let (addr, crossed) = get_address_indirect_y(cpu, bus);
             cpu.cycles += if crossed { 6 } else { 5 };
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         _ => unreachable!(),
     };
@@ -62,12 +62,12 @@ pub fn cpx(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         0xE4 => {
             cpu.cycles += 3;
             let addr = get_address_zeropage(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xEC => {
             cpu.cycles += 4;
             let addr = get_address_absolute(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         _ => unreachable!(),
     };
@@ -83,12 +83,12 @@ pub fn cpy(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         0xC4 => {
             cpu.cycles += 3;
             let addr = get_address_zeropage(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xCC => {
             cpu.cycles += 4;
             let addr = get_address_absolute(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         _ => unreachable!(),
     };

@@ -156,19 +156,19 @@ fn dop_imm(cpu: &mut CPU, bus: &mut Bus) {
 fn dop_zp(cpu: &mut CPU, bus: &mut Bus) {
     cpu.cycles += 3;
     let a = get_address_zeropage(cpu, bus);
-    let _ = bus.read(a);
+    let _ = bus.read_cpu(a);
 }
 
 fn dop_zpx(cpu: &mut CPU, bus: &mut Bus) {
     cpu.cycles += 4;
     let a = get_address_zeropage_x(cpu, bus);
-    let _ = bus.read(a);
+    let _ = bus.read_cpu(a);
 }
 
 fn top_abs(cpu: &mut CPU, bus: &mut Bus) {
     cpu.cycles += 4;
     let a = get_address_absolute(cpu, bus);
-    let _ = bus.read(a);
+    let _ = bus.read_cpu(a);
 }
 
 fn top_abs_x(cpu: &mut CPU, bus: &mut Bus) {
@@ -176,7 +176,7 @@ fn top_abs_x(cpu: &mut CPU, bus: &mut Bus) {
     let addr = base.wrapping_add(cpu.x as u16);
     let crossed = (base & 0xFF00) != (addr & 0xFF00);
     cpu.cycles += if crossed { 5 } else { 4 };
-    let _ = bus.read(addr);
+    let _ = bus.read_cpu(addr);
 }
 
 fn anc_imm(cpu: &mut CPU, bus: &mut Bus) {
@@ -261,66 +261,66 @@ fn xaa_imm(cpu: &mut CPU, bus: &mut Bus) {
 fn sax_zp(cpu: &mut CPU, bus: &mut Bus) {
     cpu.cycles += 3;
     let a = get_address_zeropage(cpu, bus);
-    bus.write(a, cpu.a & cpu.x);
+    bus.write_cpu(a, cpu.a & cpu.x);
 }
 
 fn sax_zpy(cpu: &mut CPU, bus: &mut Bus) {
     cpu.cycles += 4;
     let a = get_address_zeropage_y(cpu, bus);
-    bus.write(a, cpu.a & cpu.x);
+    bus.write_cpu(a, cpu.a & cpu.x);
 }
 
 fn sax_ind_x(cpu: &mut CPU, bus: &mut Bus) {
     cpu.cycles += 6;
     let a = get_address_indirect_x(cpu, bus);
-    bus.write(a, cpu.a & cpu.x);
+    bus.write_cpu(a, cpu.a & cpu.x);
 }
 
 fn sax_abs(cpu: &mut CPU, bus: &mut Bus) {
     cpu.cycles += 4;
     let a = get_address_absolute(cpu, bus);
-    bus.write(a, cpu.a & cpu.x);
+    bus.write_cpu(a, cpu.a & cpu.x);
 }
 
 fn lax_zp(cpu: &mut CPU, bus: &mut Bus) {
     cpu.cycles += 3;
     let a = get_address_zeropage(cpu, bus);
-    let v = bus.read(a);
+    let v = bus.read_cpu(a);
     lax_store(cpu, v);
 }
 
 fn lax_zpy(cpu: &mut CPU, bus: &mut Bus) {
     cpu.cycles += 4;
     let a = get_address_zeropage_y(cpu, bus);
-    let v = bus.read(a);
+    let v = bus.read_cpu(a);
     lax_store(cpu, v);
 }
 
 fn lax_abs(cpu: &mut CPU, bus: &mut Bus) {
     cpu.cycles += 4;
     let a = get_address_absolute(cpu, bus);
-    let v = bus.read(a);
+    let v = bus.read_cpu(a);
     lax_store(cpu, v);
 }
 
 fn lax_abs_y(cpu: &mut CPU, bus: &mut Bus) {
     let (addr, crossed) = get_address_absolute_y(cpu, bus);
     cpu.cycles += if crossed { 5 } else { 4 };
-    let v = bus.read(addr);
+    let v = bus.read_cpu(addr);
     lax_store(cpu, v);
 }
 
 fn lax_ind_x(cpu: &mut CPU, bus: &mut Bus) {
     cpu.cycles += 6;
     let a = get_address_indirect_x(cpu, bus);
-    let v = bus.read(a);
+    let v = bus.read_cpu(a);
     lax_store(cpu, v);
 }
 
 fn lax_ind_y(cpu: &mut CPU, bus: &mut Bus) {
     let (addr, crossed) = get_address_indirect_y(cpu, bus);
     cpu.cycles += if crossed { 6 } else { 5 };
-    let v = bus.read(addr);
+    let v = bus.read_cpu(addr);
     lax_store(cpu, v);
 }
 
@@ -334,59 +334,59 @@ fn sha_ind_y(cpu: &mut CPU, bus: &mut Bus) {
     cpu.cycles += 6;
     let addr = get_address_indirect_y_write(cpu, bus);
     let h = (addr >> 8) as u8;
-    bus.write(addr, cpu.a & cpu.x & h.wrapping_add(1));
+    bus.write_cpu(addr, cpu.a & cpu.x & h.wrapping_add(1));
 }
 
 fn sha_abs_y(cpu: &mut CPU, bus: &mut Bus) {
     let base = cpu.fetch_word(bus);
     let addr = base.wrapping_add(cpu.y as u16);
     let dummy = (base & 0xFF00) | (addr & 0x00FF);
-    let _ = bus.read(dummy);
+    let _ = bus.read_cpu(dummy);
     let h = (base >> 8) as u8;
     let v = cpu.a & cpu.x & h.wrapping_add(1);
     cpu.cycles += 5;
-    bus.write(addr, v);
+    bus.write_cpu(addr, v);
 }
 
 fn shy_abs_x(cpu: &mut CPU, bus: &mut Bus) {
     let base = cpu.fetch_word(bus);
     let addr = base.wrapping_add(cpu.x as u16);
     let dummy = (base & 0xFF00) | (addr & 0x00FF);
-    let _ = bus.read(dummy);
+    let _ = bus.read_cpu(dummy);
     let h = (addr >> 8) as u8;
     let v = cpu.y & h.wrapping_add(1);
     cpu.cycles += 5;
-    bus.write(addr, v);
+    bus.write_cpu(addr, v);
 }
 
 fn shx_abs_y(cpu: &mut CPU, bus: &mut Bus) {
     let base = cpu.fetch_word(bus);
     let addr = base.wrapping_add(cpu.y as u16);
     let dummy = (base & 0xFF00) | (addr & 0x00FF);
-    let _ = bus.read(dummy);
+    let _ = bus.read_cpu(dummy);
     let h = (addr >> 8) as u8;
     let v = cpu.x & h.wrapping_add(1);
     cpu.cycles += 5;
-    bus.write(addr, v);
+    bus.write_cpu(addr, v);
 }
 
 fn tas_abs_y(cpu: &mut CPU, bus: &mut Bus) {
     let base = cpu.fetch_word(bus);
     let addr = base.wrapping_add(cpu.y as u16);
     let dummy = (base & 0xFF00) | (addr & 0x00FF);
-    let _ = bus.read(dummy);
+    let _ = bus.read_cpu(dummy);
     let s = cpu.x & cpu.a;
     cpu.sp = s;
     let h = (addr >> 8) as u8;
     let v = s & h.wrapping_add(1);
     cpu.cycles += 5;
-    bus.write(addr, v);
+    bus.write_cpu(addr, v);
 }
 
 fn las_abs_y(cpu: &mut CPU, bus: &mut Bus) {
     let (addr, crossed) = get_address_absolute_y(cpu, bus);
     cpu.cycles += if crossed { 5 } else { 4 };
-    let t = bus.read(addr);
+    let t = bus.read_cpu(addr);
     let v = t & cpu.sp;
     cpu.a = v;
     cpu.x = v;
@@ -420,7 +420,7 @@ fn resolve_rmw(cpu: &mut CPU, bus: &mut Bus, mode: RmwAddr) -> u16 {
 fn rmw_slo(cpu: &mut CPU, bus: &mut Bus, cycles: u64, mode: RmwAddr) {
     cpu.cycles += cycles;
     let addr = resolve_rmw(cpu, bus, mode);
-    let v = bus.read(addr);
+    let v = bus.read_cpu(addr);
     let c = (v & 0x80) != 0;
     let r = v.wrapping_shl(1);
     rmw_store(bus, addr, v, r);
@@ -432,7 +432,7 @@ fn rmw_slo(cpu: &mut CPU, bus: &mut Bus, cycles: u64, mode: RmwAddr) {
 fn rmw_rla(cpu: &mut CPU, bus: &mut Bus, cycles: u64, mode: RmwAddr) {
     cpu.cycles += cycles;
     let addr = resolve_rmw(cpu, bus, mode);
-    let v = bus.read(addr);
+    let v = bus.read_cpu(addr);
     let c_in = cpu.get_flag(FLAG_C);
     let new_c = (v & 0x80) != 0;
     let r = (v << 1) | if c_in { 1 } else { 0 };
@@ -445,7 +445,7 @@ fn rmw_rla(cpu: &mut CPU, bus: &mut Bus, cycles: u64, mode: RmwAddr) {
 fn rmw_sre(cpu: &mut CPU, bus: &mut Bus, cycles: u64, mode: RmwAddr) {
     cpu.cycles += cycles;
     let addr = resolve_rmw(cpu, bus, mode);
-    let v = bus.read(addr);
+    let v = bus.read_cpu(addr);
     let c = (v & 1) != 0;
     let r = v >> 1;
     rmw_store(bus, addr, v, r);
@@ -457,7 +457,7 @@ fn rmw_sre(cpu: &mut CPU, bus: &mut Bus, cycles: u64, mode: RmwAddr) {
 fn rmw_rra(cpu: &mut CPU, bus: &mut Bus, cycles: u64, mode: RmwAddr) {
     cpu.cycles += cycles;
     let addr = resolve_rmw(cpu, bus, mode);
-    let v = bus.read(addr);
+    let v = bus.read_cpu(addr);
     let c_in = cpu.get_flag(FLAG_C);
     let new_c = (v & 1) != 0;
     let r = (v >> 1) | if c_in { 0x80 } else { 0 };
@@ -469,7 +469,7 @@ fn rmw_rra(cpu: &mut CPU, bus: &mut Bus, cycles: u64, mode: RmwAddr) {
 fn rmw_dcp(cpu: &mut CPU, bus: &mut Bus, cycles: u64, mode: RmwAddr) {
     cpu.cycles += cycles;
     let addr = resolve_rmw(cpu, bus, mode);
-    let v = bus.read(addr);
+    let v = bus.read_cpu(addr);
     let r = v.wrapping_sub(1);
     rmw_store(bus, addr, v, r);
     cmp_value(cpu, cpu.a, r);
@@ -478,7 +478,7 @@ fn rmw_dcp(cpu: &mut CPU, bus: &mut Bus, cycles: u64, mode: RmwAddr) {
 fn rmw_isc(cpu: &mut CPU, bus: &mut Bus, cycles: u64, mode: RmwAddr) {
     cpu.cycles += cycles;
     let addr = resolve_rmw(cpu, bus, mode);
-    let v = bus.read(addr);
+    let v = bus.read_cpu(addr);
     let inc = v.wrapping_add(1);
     rmw_store(bus, addr, v, inc);
     sbc_value(cpu, inc);

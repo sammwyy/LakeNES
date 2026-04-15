@@ -28,6 +28,9 @@ pub struct Bus {
     nmi_pending: bool,
     irq_pending: bool,
     cpu_stall_cycles: u64,
+
+    /// PPU dots (1 dot = 1 `ppu.step`) advanced by `read_cpu`/`write_cpu` this instruction.
+    ppu_dots_from_cpu_memory: u32,
 }
 
 impl Bus {
@@ -43,6 +46,54 @@ impl Bus {
             nmi_pending: false,
             irq_pending: false,
             cpu_stall_cycles: 0,
+            ppu_dots_from_cpu_memory: 0,
+        }
+    }
+
+    /// Run 3 PPU dots per CPU memory cycle (NTSC). Used for CPU↔PPU alignment.
+    fn run_ppu_three_dots(&mut self) {
+        if let (Some(ppu), Some(rom)) = (self.ppu.as_mut(), self.rom.as_mut()) {
+            ppu.step_many(3, &mut *rom.mapper);
+        }
+        self.ppu_dots_from_cpu_memory = self.ppu_dots_from_cpu_memory.saturating_add(3);
+    }
+
+    pub fn begin_cpu_instruction(&mut self) {
+        self.ppu_dots_from_cpu_memory = 0;
+    }
+
+    /// After each CPU memory access (except during reset/DMA helpers that use `read` only).
+    pub fn read_cpu(&mut self, addr: u16) -> u8 {
+        let v = self.read(addr);
+        self.run_ppu_three_dots();
+        v
+    }
+
+    pub fn write_cpu(&mut self, addr: u16, value: u8) {
+        self.write(addr, value);
+        self.run_ppu_three_dots();
+    }
+
+    /// Remaining PPU dots for this instruction (dummy cycles, implied ops, etc.).
+    pub fn ppu_end_instruction_catch_up(&mut self, cpu_cycles: u64) {
+        let want = (cpu_cycles as u32).saturating_mul(3);
+        let got = self.ppu_dots_from_cpu_memory;
+        let need = want.saturating_sub(got);
+        self.ppu_dots_from_cpu_memory = 0;
+        if need > 0 {
+            if let (Some(ppu), Some(rom)) = (self.ppu.as_mut(), self.rom.as_mut()) {
+                ppu.step_many(need as usize, &mut *rom.mapper);
+            }
+        }
+    }
+
+    /// Advance PPU without a CPU memory access (e.g. CPU reset vector reads).
+    pub fn advance_ppu_dots(&mut self, dots: usize) {
+        if dots == 0 {
+            return;
+        }
+        if let (Some(ppu), Some(rom)) = (self.ppu.as_mut(), self.rom.as_mut()) {
+            ppu.step_many(dots, &mut *rom.mapper);
         }
     }
 

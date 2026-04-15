@@ -7,22 +7,22 @@ pub fn dec(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         0xC6 => {
             cpu.cycles += 5;
             let addr = get_address_zeropage(cpu, bus);
-            (addr, bus.read(addr))
+            (addr, bus.read_cpu(addr))
         }
         0xD6 => {
             cpu.cycles += 6;
             let addr = get_address_zeropage_x(cpu, bus);
-            (addr, bus.read(addr))
+            (addr, bus.read_cpu(addr))
         }
         0xCE => {
             cpu.cycles += 6;
             let addr = get_address_absolute(cpu, bus);
-            (addr, bus.read(addr))
+            (addr, bus.read_cpu(addr))
         }
         0xDE => {
             cpu.cycles += 7;
             let addr = get_address_absolute_x_write(cpu, bus);
-            (addr, bus.read(addr))
+            (addr, bus.read_cpu(addr))
         }
         _ => unreachable!(),
     };
@@ -49,22 +49,22 @@ pub fn inc(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         0xE6 => {
             cpu.cycles += 5;
             let addr = get_address_zeropage(cpu, bus);
-            (addr, bus.read(addr))
+            (addr, bus.read_cpu(addr))
         }
         0xF6 => {
             cpu.cycles += 6;
             let addr = get_address_zeropage_x(cpu, bus);
-            (addr, bus.read(addr))
+            (addr, bus.read_cpu(addr))
         }
         0xEE => {
             cpu.cycles += 6;
             let addr = get_address_absolute(cpu, bus);
-            (addr, bus.read(addr))
+            (addr, bus.read_cpu(addr))
         }
         0xFE => {
             cpu.cycles += 7;
             let addr = get_address_absolute_x_write(cpu, bus);
-            (addr, bus.read(addr))
+            (addr, bus.read_cpu(addr))
         }
         _ => unreachable!(),
     };

@@ -11,37 +11,37 @@ pub fn adc(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         0x65 => {
             cpu.cycles += 3;
             let addr = get_address_zeropage(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0x75 => {
             cpu.cycles += 4;
             let addr = get_address_zeropage_x(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0x6D => {
             cpu.cycles += 4;
             let addr = get_address_absolute(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0x7D => {
             let (addr, crossed) = get_address_absolute_x(cpu, bus);
             cpu.cycles += if crossed { 5 } else { 4 };
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0x79 => {
             let (addr, crossed) = get_address_absolute_y(cpu, bus);
             cpu.cycles += if crossed { 5 } else { 4 };
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0x61 => {
             cpu.cycles += 6;
             let addr = get_address_indirect_x(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0x71 => {
             let (addr, crossed) = get_address_indirect_y(cpu, bus);
             cpu.cycles += if crossed { 6 } else { 5 };
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         _ => unreachable!(),
     };
@@ -66,37 +66,37 @@ pub fn sbc(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         0xE5 => {
             cpu.cycles += 3;
             let addr = get_address_zeropage(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xF5 => {
             cpu.cycles += 4;
             let addr = get_address_zeropage_x(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xED => {
             cpu.cycles += 4;
             let addr = get_address_absolute(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xFD => {
             let (addr, crossed) = get_address_absolute_x(cpu, bus);
             cpu.cycles += if crossed { 5 } else { 4 };
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xF9 => {
             let (addr, crossed) = get_address_absolute_y(cpu, bus);
             cpu.cycles += if crossed { 5 } else { 4 };
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xE1 => {
             cpu.cycles += 6;
             let addr = get_address_indirect_x(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xF1 => {
             let (addr, crossed) = get_address_indirect_y(cpu, bus);
             cpu.cycles += if crossed { 6 } else { 5 };
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         _ => unreachable!(),
     };

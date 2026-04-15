@@ -35,8 +35,6 @@ pub struct NES {
 impl NES {
     const CPU_FREQUENCY_HZ: f64 = 1_789_772.7272;
     const AUDIO_BUFFER_CAPACITY: usize = 16_384;
-    const SYNC_SLICE_CPU_CYCLES: u64 = 32;
-
     pub fn new(rom_data: &[u8]) -> Self {
         let rom = ROM::load_from_bytes(rom_data).expect("Failed to load ROM");
         let mut bus = Bus::new();
@@ -81,8 +79,15 @@ impl NES {
         let dma_stall = self.bus.take_cpu_stall_cycles();
         cpu_cycles = cpu_cycles.saturating_add(dma_stall);
 
+        if dma_stall > 0 {
+            if let (Some(ppu), Some(rom)) = (self.bus.ppu.as_mut(), self.bus.rom.as_mut()) {
+                ppu.step_many((dma_stall * 3) as usize, &mut *rom.mapper);
+            }
+        }
+
         let target_cpu = self.master_cpu_cycles.saturating_add(cpu_cycles);
-        self.sync_subsystems_to_cpu(target_cpu);
+        self.master_cpu_cycles = target_cpu;
+        self.master_ppu_cycles = target_cpu.saturating_mul(3);
 
         let mut apu = self.bus.apu.take();
         if let Some(ref mut apu_ref) = apu {
@@ -106,24 +111,11 @@ impl NES {
             }
         }
         self.bus.apu = apu;
-        self.master_cpu_cycles = target_cpu;
 
         self.bus.check_ppu_nmi();
         self.bus.check_mapper_irq();
 
         cpu_cycles
-    }
-
-    fn sync_subsystems_to_cpu(&mut self, target_cpu_cycles: u64) {
-        let target_ppu_cycles = target_cpu_cycles.saturating_mul(3);
-        while self.master_ppu_cycles < target_ppu_cycles {
-            let remain = target_ppu_cycles - self.master_ppu_cycles;
-            let slice = core::cmp::min(remain, Self::SYNC_SLICE_CPU_CYCLES * 3);
-            if let (Some(ppu), Some(rom)) = (self.bus.ppu.as_mut(), self.bus.rom.as_mut()) {
-                ppu.step_many(slice as usize, &mut *rom.mapper);
-            }
-            self.master_ppu_cycles = self.master_ppu_cycles.saturating_add(slice);
-        }
     }
 
     pub fn step_frame(&mut self) {

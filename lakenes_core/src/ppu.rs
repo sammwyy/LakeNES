@@ -148,6 +148,8 @@ pub struct PPU {
     // Data Buffer
     data_buffer: u8,
     open_bus: u8,
+    /// Fractional decay toward 0; reset when the CPU drives the PPU data bus.
+    open_bus_decay_acc: u32,
 
     // Background Rendering
     bg_next_tile_id: u8,
@@ -178,6 +180,28 @@ pub struct PPU {
 }
 
 impl PPU {
+    /// NTSC PPU cycles per wall second (≈60.09 Hz × 341 × 262). Used so open-bus
+    /// charge decays to 0 within ~1 s when not refreshed (ppu_open_bus test).
+    const OPEN_BUS_DECAY_PERIOD: u32 = 341 * 262 * 60;
+
+    #[inline]
+    fn set_open_bus_from_cpu(&mut self, value: u8) {
+        self.open_bus = value;
+        self.open_bus_decay_acc = 0;
+    }
+
+    fn tick_open_bus_decay(&mut self) {
+        if self.open_bus == 0 {
+            self.open_bus_decay_acc = 0;
+            return;
+        }
+        self.open_bus_decay_acc = self.open_bus_decay_acc.saturating_add(255);
+        while self.open_bus_decay_acc >= Self::OPEN_BUS_DECAY_PERIOD {
+            self.open_bus_decay_acc -= Self::OPEN_BUS_DECAY_PERIOD;
+            self.open_bus = self.open_bus.saturating_sub(1);
+        }
+    }
+
     #[inline(always)]
     fn mirror_vram_addr(addr: u16, mode: Mirroring) -> usize {
         let addr = addr & 0x0FFF;
@@ -234,6 +258,7 @@ impl PPU {
             w_toggle: false,
             data_buffer: 0,
             open_bus: 0,
+            open_bus_decay_acc: 0,
             bg_next_tile_id: 0,
             bg_next_tile_attr: 0,
             bg_next_tile_lsb: 0,
@@ -278,7 +303,7 @@ impl PPU {
         let res = (self.status.bits() & 0xE0) | (self.open_bus & 0x1F);
         self.status.remove(Status::VBLANK);
         self.w_toggle = false;
-        self.open_bus = res;
+        self.set_open_bus_from_cpu(res);
 
         // VBlank suppression: if read happens exactly when VBlank would be set,
         // it returns 0 for bit 7 and prevents NMI.
@@ -343,9 +368,10 @@ impl PPU {
         let mut data = self.data_buffer;
         self.data_buffer = self.ppu_read(self.v_ram.reg, mapper);
 
-        // If reading palette, return immediately (don't buffer)
+        // Palette reads: only bits 0–5 come from palette RAM; bits 6–7 are the
+        // decaying internal bus (ppu_open_bus test #8).
         if self.v_ram.reg >= 0x3F00 {
-            data = self.data_buffer;
+            data = (self.data_buffer & 0x3F) | (self.open_bus & 0xC0);
         }
 
         let inc = if self.ctrl.contains(Control::VRAM_INCREMENT) {
@@ -354,7 +380,7 @@ impl PPU {
             1
         };
         self.v_ram.reg = (self.v_ram.reg + inc) & 0x7FFF;
-        self.open_bus = data;
+        self.set_open_bus_from_cpu(data);
 
         data
     }
@@ -530,6 +556,8 @@ impl PPU {
                 self.odd_frame = !self.odd_frame;
             }
         }
+
+        self.tick_open_bus_decay();
     }
 
     pub fn step_many(&mut self, cycles: usize, mapper: &mut dyn Mapper) {
@@ -833,8 +861,13 @@ impl PPU {
         match addr & 0x0007 {
             0x0002 => self.read_status(),
             0x0004 => {
-                let value = self.oam_data[self.oam_addr as usize];
-                self.open_bus = value;
+                let mut value = self.oam_data[self.oam_addr as usize];
+                // Attribute byte (byte 2 of each 4-byte sprite): bits 2–4 are not
+                // driven on read; hardware returns 0 (ppu_open_bus test #10).
+                if self.oam_addr % 4 == 2 {
+                    value &= !0x1C;
+                }
+                self.set_open_bus_from_cpu(value);
                 value
             }
             0x0007 => self.read_ppu_data(mapper),
@@ -843,7 +876,7 @@ impl PPU {
     }
 
     pub fn write(&mut self, addr: u16, value: u8, mapper: &mut dyn Mapper) {
-        self.open_bus = value;
+        self.set_open_bus_from_cpu(value);
         match addr & 0x0007 {
             0x0000 => self.write_ctrl(value),
             0x0001 => self.write_mask(value),

@@ -4,14 +4,14 @@ use crate::cpu::CPU;
 
 pub fn brk(cpu: &mut CPU, bus: &mut Bus) {
     // Cycle 2: read the byte after BRK (ignored on data path, but hits the bus like other 1-byte ops).
-    let _ = bus.read(cpu.pc);
+    let _ = bus.read_cpu(cpu.pc);
     cpu.pc = cpu.pc.wrapping_add(1);
     cpu.push_word(bus, cpu.pc);
     cpu.push_byte(bus, cpu.p | FLAG_B | FLAG_U);
     cpu.set_flag(FLAG_I, true);
 
-    let lo = bus.read(0xFFFE) as u16;
-    let hi = bus.read(0xFFFF) as u16;
+    let lo = bus.read_cpu(0xFFFE) as u16;
+    let hi = bus.read_cpu(0xFFFF) as u16;
     cpu.pc = (hi << 8) | lo;
     cpu.cycles += 7;
 }
@@ -25,10 +25,10 @@ pub fn jmp(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         0x6C => {
             cpu.cycles += 5;
             let ptr = cpu.fetch_word(bus);
-            let lo = bus.read(ptr) as u16;
+            let lo = bus.read_cpu(ptr) as u16;
             // Page wrap bug in 6502
             let hi_addr = (ptr & 0xFF00) | (ptr.wrapping_add(1) & 0x00FF);
-            let hi = bus.read(hi_addr) as u16;
+            let hi = bus.read_cpu(hi_addr) as u16;
             cpu.pc = (hi << 8) | lo;
         }
         _ => unreachable!(),
@@ -44,7 +44,7 @@ pub fn jsr(cpu: &mut CPU, bus: &mut Bus) {
 
 pub fn rti(cpu: &mut CPU, bus: &mut Bus) {
     // Cycle 2: fetch and discard the byte following the opcode (same as RTS; matters for I/O).
-    let _ = bus.read(cpu.pc);
+    let _ = bus.read_cpu(cpu.pc);
     cpu.pc = cpu.pc.wrapping_add(1);
     cpu.cycles += 6;
     cpu.p = (cpu.pop_byte(bus) & !FLAG_B) | FLAG_U;
@@ -53,7 +53,7 @@ pub fn rti(cpu: &mut CPU, bus: &mut Bus) {
 
 pub fn rts(cpu: &mut CPU, bus: &mut Bus) {
     // Cycle 2: fetch and discard the byte following the opcode (matters for PPU I/O open-bus).
-    let _ = bus.read(cpu.pc);
+    let _ = bus.read_cpu(cpu.pc);
     cpu.pc = cpu.pc.wrapping_add(1);
     cpu.cycles += 6;
     cpu.pc = cpu.pop_word(bus).wrapping_add(1);

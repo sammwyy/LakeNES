@@ -11,37 +11,37 @@ pub fn lda(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         0xA5 => {
             cpu.cycles += 3;
             let addr = get_address_zeropage(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xB5 => {
             cpu.cycles += 4;
             let addr = get_address_zeropage_x(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xAD => {
             cpu.cycles += 4;
             let addr = get_address_absolute(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xBD => {
             let (addr, crossed) = get_address_absolute_x(cpu, bus);
             cpu.cycles += if crossed { 5 } else { 4 };
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xB9 => {
             let (addr, crossed) = get_address_absolute_y(cpu, bus);
             cpu.cycles += if crossed { 5 } else { 4 };
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xA1 => {
             cpu.cycles += 6;
             let addr = get_address_indirect_x(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xB1 => {
             let (addr, crossed) = get_address_indirect_y(cpu, bus);
             cpu.cycles += if crossed { 6 } else { 5 };
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         _ => unreachable!(),
     };
@@ -58,22 +58,22 @@ pub fn ldx(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         0xA6 => {
             cpu.cycles += 3;
             let addr = get_address_zeropage(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xB6 => {
             cpu.cycles += 4;
             let addr = get_address_zeropage_y(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xAE => {
             cpu.cycles += 4;
             let addr = get_address_absolute(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xBE => {
             let (addr, crossed) = get_address_absolute_y(cpu, bus);
             cpu.cycles += if crossed { 5 } else { 4 };
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         _ => unreachable!(),
     };
@@ -90,22 +90,22 @@ pub fn ldy(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         0xA4 => {
             cpu.cycles += 3;
             let addr = get_address_zeropage(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xB4 => {
             cpu.cycles += 4;
             let addr = get_address_zeropage_x(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xAC => {
             cpu.cycles += 4;
             let addr = get_address_absolute(cpu, bus);
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         0xBC => {
             let (addr, crossed) = get_address_absolute_x(cpu, bus);
             cpu.cycles += if crossed { 5 } else { 4 };
-            bus.read(addr)
+            bus.read_cpu(addr)
         }
         _ => unreachable!(),
     };
@@ -145,7 +145,7 @@ pub fn sta(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         }
         _ => unreachable!(),
     };
-    bus.write(addr, cpu.a);
+    bus.write_cpu(addr, cpu.a);
 }
 
 pub fn stx(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
@@ -164,7 +164,7 @@ pub fn stx(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         }
         _ => unreachable!(),
     };
-    bus.write(addr, cpu.x);
+    bus.write_cpu(addr, cpu.x);
 }
 
 pub fn sty(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
@@ -183,5 +183,5 @@ pub fn sty(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         }
         _ => unreachable!(),
     };
-    bus.write(addr, cpu.y);
+    bus.write_cpu(addr, cpu.y);
 }

@@ -48,7 +48,9 @@ impl CPU {
         self.p = FLAG_I | FLAG_U;
 
         let lo = bus.read(RESET_VECTOR) as u16;
+        bus.advance_ppu_dots(3);
         let hi = bus.read(RESET_VECTOR + 1) as u16;
+        bus.advance_ppu_dots(3);
         self.pc = (hi << 8) | lo;
 
         self.cycles = 0;
@@ -57,6 +59,7 @@ impl CPU {
 
     pub fn step(&mut self, bus: &mut Bus) -> u64 {
         let cycles_before = self.cycles;
+        bus.begin_cpu_instruction();
 
         if bus.poll_nmi() {
             self.handle_nmi(bus);
@@ -67,7 +70,10 @@ impl CPU {
             self.execute(opcode, bus);
         }
 
-        self.cycles - cycles_before
+        let c = self.cycles - cycles_before;
+        bus.ppu_end_instruction_catch_up(c);
+
+        c
     }
 
     fn handle_nmi(&mut self, bus: &mut Bus) {
@@ -76,8 +82,8 @@ impl CPU {
 
         self.set_flag(FLAG_I, true);
 
-        let lo = bus.read(NMI_VECTOR) as u16;
-        let hi = bus.read(NMI_VECTOR + 1) as u16;
+        let lo = bus.read_cpu(NMI_VECTOR) as u16;
+        let hi = bus.read_cpu(NMI_VECTOR + 1) as u16;
         self.pc = (hi << 8) | lo;
         self.cycles += 7;
         log::debug!("NMI handled, jumping to 0x{:04X}", self.pc);
@@ -88,8 +94,8 @@ impl CPU {
         self.push_byte(bus, self.p & !FLAG_B);
         self.set_flag(FLAG_I, true);
 
-        let lo = bus.read(IRQ_VECTOR) as u16;
-        let hi = bus.read(IRQ_VECTOR + 1) as u16;
+        let lo = bus.read_cpu(IRQ_VECTOR) as u16;
+        let hi = bus.read_cpu(IRQ_VECTOR + 1) as u16;
         self.pc = (hi << 8) | lo;
 
         self.cycles += 7;
@@ -171,7 +177,7 @@ impl CPU {
     }
 
     pub fn fetch_byte(&mut self, bus: &mut Bus) -> u8 {
-        let byte = bus.read(self.pc);
+        let byte = bus.read_cpu(self.pc);
         self.pc = self.pc.wrapping_add(1);
         byte
     }
@@ -183,7 +189,7 @@ impl CPU {
     }
 
     pub fn push_byte(&mut self, bus: &mut Bus, value: u8) {
-        bus.write(STACK_BASE + self.sp as u16, value);
+        bus.write_cpu(STACK_BASE + self.sp as u16, value);
         self.sp = self.sp.wrapping_sub(1);
     }
 
@@ -194,7 +200,7 @@ impl CPU {
 
     pub fn pop_byte(&mut self, bus: &mut Bus) -> u8 {
         self.sp = self.sp.wrapping_add(1);
-        bus.read(STACK_BASE + self.sp as u16)
+        bus.read_cpu(STACK_BASE + self.sp as u16)
     }
 
     pub fn pop_word(&mut self, bus: &mut Bus) -> u16 {
