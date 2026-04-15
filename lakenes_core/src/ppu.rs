@@ -168,8 +168,10 @@ pub struct PPU {
     sprite_fetch_index: usize,
     sprite_shifter_pattern_lo: [u8; 8],
     sprite_shifter_pattern_hi: [u8; 8],
-    sprite_zero_hit_possible: bool,
-    sprite_zero_being_rendered: bool,
+    /// OAM sprite 0 is visible on the scanline currently being drawn (from eval at dot 256 of prev line).
+    sprite_zero_on_scanline: bool,
+    /// Set by `evaluate_sprites` for line `scanline + 1`; latched into `sprite_zero_on_scanline` on scanline advance.
+    sprite_zero_pending: bool,
 
     // Legacy / Debug compatibility
     pub scroll_x: u8,
@@ -273,8 +275,8 @@ impl PPU {
             sprite_fetch_index: 0,
             sprite_shifter_pattern_lo: [0; 8],
             sprite_shifter_pattern_hi: [0; 8],
-            sprite_zero_hit_possible: false,
-            sprite_zero_being_rendered: false,
+            sprite_zero_on_scanline: false,
+            sprite_zero_pending: false,
             scroll_x: 0,
             scroll_y: 0,
             odd_frame: false,
@@ -442,7 +444,6 @@ impl PPU {
             if self.scanline == -1 && self.cycle == 1 {
                 self.status
                     .remove(Status::VBLANK | Status::SPRITE_OVERFLOW | Status::SPRITE_ZHIT);
-                self.sprite_zero_hit_possible = false;
                 for i in 0..8 {
                     self.sprite_shifter_pattern_lo[i] = 0;
                     self.sprite_shifter_pattern_hi[i] = 0;
@@ -514,6 +515,11 @@ impl PPU {
                 self.transfer_address_y();
             }
 
+            // Dot 256: draw x=255 before sprite evaluation mutates `scanline_sprites` for the next line.
+            if self.scanline >= 0 && self.scanline < 240 && self.cycle == 256 {
+                self.render_pixel(mapper);
+            }
+
             if self.cycle == 256 {
                 self.evaluate_sprites();
                 self.sprite_fetch_index = 0;
@@ -530,8 +536,8 @@ impl PPU {
             }
         }
 
-        // Actually render pixel
-        if self.scanline >= 0 && self.scanline < 240 && self.cycle >= 1 && self.cycle <= 256 {
+        // Visible pixels (x=255 is drawn at dot 256 above, before sprite evaluation).
+        if self.scanline >= 0 && self.scanline < 240 && self.cycle >= 1 && self.cycle <= 255 {
             self.render_pixel(mapper);
         }
 
@@ -554,6 +560,9 @@ impl PPU {
                 self.scanline = -1;
                 self.frame_count += 1;
                 self.odd_frame = !self.odd_frame;
+            } else if self.scanline >= 0 && self.scanline < 240 {
+                // Sprites for this line were determined at dot 256 of the previous line.
+                self.sprite_zero_on_scanline = self.sprite_zero_pending;
             }
         }
 
@@ -640,6 +649,60 @@ impl PPU {
             };
     }
 
+    /// Pattern pixel (0 = transparent) for OAM entry 0 only at framebuffer X `x` on current `scanline`.
+    fn sprite_zero_pattern_pixel_at(&self, x: i16, mapper: &mut dyn Mapper) -> u8 {
+        let y = self.oam_data[0] as i16;
+        let tile_idx = self.oam_data[1];
+        let attr = self.oam_data[2];
+        let spr_x = self.oam_data[3] as i16;
+        let px = x - spr_x;
+        if px < 0 || px > 7 {
+            return 0;
+        }
+        let sprite_height = if self.ctrl.contains(Control::SPRITE_SIZE) {
+            16
+        } else {
+            8
+        };
+        let mut row = self.scanline - y - 1;
+        if row < 0 || row >= sprite_height {
+            return 0;
+        }
+        if (attr & 0x80) != 0 {
+            row = sprite_height - 1 - row;
+        }
+
+        let (tile_addr_lo, tile_addr_hi) = if sprite_height == 8 {
+            let table = if self.ctrl.contains(Control::SPRITE_PATTERN) {
+                0x1000
+            } else {
+                0x0000
+            };
+            let lo = table | (tile_idx as u16) << 4 | row as u16;
+            (lo, lo + 8)
+        } else {
+            let table = ((tile_idx & 1) as u16) * 0x1000;
+            let idx = tile_idx & 0xFE;
+            let lo = if row < 8 {
+                table | (idx as u16) << 4 | row as u16
+            } else {
+                table | ((idx + 1) as u16) << 4 | (row as u16 - 8)
+            };
+            (lo, lo + 8)
+        };
+
+        let mut pat_lo = self.ppu_read(tile_addr_lo, mapper);
+        let mut pat_hi = self.ppu_read(tile_addr_hi, mapper);
+        if (attr & 0x40) != 0 {
+            pat_lo = pat_lo.reverse_bits();
+            pat_hi = pat_hi.reverse_bits();
+        }
+        let bit_mux = 7 - px;
+        let p0 = (pat_lo >> bit_mux) & 1;
+        let p1 = (pat_hi >> bit_mux) & 1;
+        (p1 << 1) | p0
+    }
+
     fn update_shifters(&mut self) {
         if self.mask.contains(Mask::RENDER_BACKGROUND) {
             self.bg_shifter_pattern_lo <<= 1;
@@ -675,14 +738,31 @@ impl PPU {
             bg_palette = (pal1 as u8) << 1 | (pal0 as u8);
         }
 
+        // Sprite 0 hit compares OAM entry 0's pattern against the background, independent
+        // of sprite priority or which sprite wins the foreground mux.
+        if self.sprite_zero_on_scanline
+            && self.mask.contains(Mask::RENDER_BACKGROUND)
+            && self.mask.contains(Mask::RENDER_SPRITES)
+            && bg_pixel != 0
+        {
+            let s0 = self.sprite_zero_pattern_pixel_at(self.cycle - 1, mapper);
+            if s0 != 0 {
+                let x = self.cycle - 1;
+                if x != 255 {
+                    let show_left_bg = self.mask.contains(Mask::RENDER_BACKGROUND_LEFT);
+                    let show_left_sp = self.mask.contains(Mask::RENDER_SPRITES_LEFT);
+                    if x >= 8 || (show_left_bg && show_left_sp) {
+                        self.status.insert(Status::SPRITE_ZHIT);
+                    }
+                }
+            }
+        }
+
         let mut fg_pixel = 0u8;
         let mut fg_palette = 0u8;
         let mut fg_priority = false;
-        let mut fg_sprite_zero = false;
 
         if self.mask.contains(Mask::RENDER_SPRITES) {
-            self.sprite_zero_being_rendered = false;
-
             for i in 0..self.scanline_sprites.len() {
                 let oam_idx = self.scanline_sprites[i] as usize;
                 let sprite_x = self.oam_data[oam_idx * 4 + 3];
@@ -700,11 +780,6 @@ impl PPU {
                             let attr = self.oam_data[oam_idx * 4 + 2];
                             fg_palette = (attr & 0x03) + 4;
                             fg_priority = (attr & 0x20) == 0; // 0 = in front of BG
-
-                            // Sprite zero is the one at OAM index 0
-                            if oam_idx == 0 {
-                                fg_sprite_zero = true;
-                            }
                             break;
                         }
                     }
@@ -717,23 +792,6 @@ impl PPU {
             (0, fg) => fg_palette << 2 | fg,
             (bg, 0) => bg_palette << 2 | bg,
             (bg, fg) => {
-                // Sprite-zero hit detection:
-                // Conditions: both BG and sprite-0 pixels are opaque, rendering is on,
-                // and the pixel is not in the left 8 columns if masking is active.
-                if fg_sprite_zero
-                    && self.sprite_zero_hit_possible
-                    && self.mask.contains(Mask::RENDER_BACKGROUND)
-                    && self.mask.contains(Mask::RENDER_SPRITES)
-                {
-                    let x = self.cycle - 1;
-                    let left_clipping = !self.mask.contains(Mask::RENDER_BACKGROUND_LEFT)
-                        || !self.mask.contains(Mask::RENDER_SPRITES_LEFT);
-                    // x==255 is excluded per NES hardware spec
-                    if x != 255 && (!left_clipping || x >= 8) {
-                        self.status.insert(Status::SPRITE_ZHIT);
-                    }
-                }
-
                 if fg_priority {
                     fg_palette << 2 | fg
                 } else {
@@ -776,7 +834,7 @@ impl PPU {
         }
 
         let mut found = 0usize;
-        self.sprite_zero_hit_possible = false;
+        self.sprite_zero_pending = false;
 
         for i in 0..64 {
             let y = self.oam_data[i * 4] as i16;
@@ -790,7 +848,7 @@ impl PPU {
                     self.secondary_oam[base + 3] = self.oam_data[i * 4 + 3];
                     self.scanline_sprites.push(i as u8);
                     if i == 0 {
-                        self.sprite_zero_hit_possible = true;
+                        self.sprite_zero_pending = true;
                     }
                     found += 1;
                 } else {

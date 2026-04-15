@@ -114,7 +114,7 @@ pub fn get_address_indirect_y_write(cpu: &mut CPU, bus: &mut Bus) -> u16 {
 }
 
 /// Read-modify-write: the 6502 writes the original byte, then the modified byte.
-pub fn rmw_store(bus: &mut Bus, addr: u16, original: u8, new_value: u8) {
-    bus.write_cpu(addr, original);
-    bus.write_cpu(addr, new_value);
+pub fn rmw_store(cpu: &CPU, bus: &mut Bus, addr: u16, original: u8, new_value: u8) {
+    bus.write_cpu(addr, original, cpu.cycles);
+    bus.write_cpu(addr, new_value, cpu.cycles);
 }

@@ -28,7 +28,7 @@ pub fn dec(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
     };
 
     let result = value.wrapping_sub(1);
-    super::rmw_store(bus, addr, value, result);
+    super::rmw_store(cpu, bus, addr, value, result);
     cpu.update_zero_negative(result);
 }
 
@@ -70,7 +70,7 @@ pub fn inc(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
     };
 
     let result = value.wrapping_add(1);
-    super::rmw_store(bus, addr, value, result);
+    super::rmw_store(cpu, bus, addr, value, result);
     cpu.update_zero_negative(result);
 }
 

@@ -189,7 +189,7 @@ impl CPU {
     }
 
     pub fn push_byte(&mut self, bus: &mut Bus, value: u8) {
-        bus.write_cpu(STACK_BASE + self.sp as u16, value);
+        bus.write_cpu(STACK_BASE + self.sp as u16, value, self.cycles);
         self.sp = self.sp.wrapping_sub(1);
     }
 

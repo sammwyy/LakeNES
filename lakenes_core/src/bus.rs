@@ -69,8 +69,10 @@ impl Bus {
         v
     }
 
-    pub fn write_cpu(&mut self, addr: u16, value: u8) {
-        self.write(addr, value);
+    /// `cpu_cycles` is the CPU's cumulative cycle counter at the moment of the write
+    /// (used for OAM DMA513 vs514 timing).
+    pub fn write_cpu(&mut self, addr: u16, value: u8, cpu_cycles: u64) {
+        self.write(addr, value, cpu_cycles);
         self.run_ppu_three_dots();
     }
 
@@ -177,7 +179,7 @@ impl Bus {
         value
     }
 
-    pub fn write(&mut self, addr: u16, value: u8) {
+    pub fn write(&mut self, addr: u16, value: u8, cpu_cycles: u64) {
         self.cpu_data_bus = value;
         match addr {
             0x0000..=0x1FFF => {
@@ -200,9 +202,9 @@ impl Bus {
                         ppu.oam_addr = ppu.oam_addr.wrapping_add(1);
                     }
                 }
-                // OAM DMA stalls CPU for 513 or 514 cycles depending on parity.
-                // We model 513 here; parity refinement can be layered on top later.
-                self.add_cpu_stall_cycles(513);
+                // OAM DMA: 513 CPU cycles if the write ends on an even cycle, 514 if odd (NTSC).
+                let stall = 513 + (cpu_cycles & 1);
+                self.add_cpu_stall_cycles(stall);
             }
             0x4016 => {
                 if let Some(ref mut joypad) = self.joypad1 {

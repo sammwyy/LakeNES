@@ -30,6 +30,8 @@ pub struct NES {
     master_cpu_cycles: u64,
     master_ppu_cycles: u64,
     master_apu_cycles: u64,
+    /// Emulated-time scale for frame pacing (100 = ~60 FPS NES, 200 = 2×, 50 = ½×).
+    emulation_speed_percent: u32,
 }
 
 impl NES {
@@ -58,7 +60,17 @@ impl NES {
             master_cpu_cycles: 0,
             master_ppu_cycles: 0,
             master_apu_cycles: 0,
+            emulation_speed_percent: 100,
         }
+    }
+
+    /// Set emulation speed for real-time pacing. `100` = normal, `200` = double, `50` = half, etc.
+    pub fn set_speed(&mut self, percent: u32) {
+        self.emulation_speed_percent = percent.clamp(1, 10_000);
+    }
+
+    pub fn speed_percent(&self) -> u32 {
+        self.emulation_speed_percent
     }
 
     pub fn set_audio_sample_rate(&mut self, sample_rate: f64) {

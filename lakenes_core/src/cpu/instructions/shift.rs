@@ -38,7 +38,7 @@ pub fn asl(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
 
             let carry = value & 0x80 != 0;
             let result = value << 1;
-            super::rmw_store(bus, addr, value, result);
+            super::rmw_store(cpu, bus, addr, value, result);
             cpu.set_flag(FLAG_C, carry);
             cpu.update_zero_negative(result);
         }
@@ -81,7 +81,7 @@ pub fn lsr(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
 
             let carry = value & 0x01 != 0;
             let result = value >> 1;
-            super::rmw_store(bus, addr, value, result);
+            super::rmw_store(cpu, bus, addr, value, result);
             cpu.set_flag(FLAG_C, carry);
             cpu.update_zero_negative(result);
         }
@@ -125,7 +125,7 @@ pub fn rol(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
 
             let new_carry = value & 0x80 != 0;
             let result = (value << 1) | old_carry;
-            super::rmw_store(bus, addr, value, result);
+            super::rmw_store(cpu, bus, addr, value, result);
             cpu.set_flag(FLAG_C, new_carry);
             cpu.update_zero_negative(result);
         }
@@ -169,7 +169,7 @@ pub fn ror(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
 
             let new_carry = value & 0x01 != 0;
             let result = (value >> 1) | (old_carry << 7);
-            super::rmw_store(bus, addr, value, result);
+            super::rmw_store(cpu, bus, addr, value, result);
             cpu.set_flag(FLAG_C, new_carry);
             cpu.update_zero_negative(result);
         }

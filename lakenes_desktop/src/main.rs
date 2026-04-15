@@ -83,7 +83,6 @@ fn main() {
     let samples_per_cycle: f64 = sample_rate / cpu_frequency;
     let mut sample_accumulator = 0.0;
     let empty_buffer = vec![0u32; 256 * 240];
-    let frame_time = Duration::from_nanos(1_000_000_000u64 / 60);
     let mut next_frame_deadline = Instant::now();
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
@@ -110,6 +109,14 @@ fn main() {
         }
 
         if let Some(ref mut nes_instance) = nes {
+            let speed = if window.is_key_down(Key::Tab) {
+                400
+            } else {
+                100
+            };
+            nes_instance.set_speed(speed);
+            let frame_time = Duration::from_secs_f64((1.0 / 60.0) * (100.0 / speed as f64));
+
             let mut joypad_bits = 0u8;
 
             if window.is_key_down(Key::Z) {

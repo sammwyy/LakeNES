@@ -145,7 +145,7 @@ pub fn sta(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         }
         _ => unreachable!(),
     };
-    bus.write_cpu(addr, cpu.a);
+    bus.write_cpu(addr, cpu.a, cpu.cycles);
 }
 
 pub fn stx(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
@@ -164,7 +164,7 @@ pub fn stx(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         }
         _ => unreachable!(),
     };
-    bus.write_cpu(addr, cpu.x);
+    bus.write_cpu(addr, cpu.x, cpu.cycles);
 }
 
 pub fn sty(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
@@ -183,5 +183,5 @@ pub fn sty(cpu: &mut CPU, opcode: u8, bus: &mut Bus) {
         }
         _ => unreachable!(),
     };
-    bus.write_cpu(addr, cpu.y);
+    bus.write_cpu(addr, cpu.y, cpu.cycles);
 }
