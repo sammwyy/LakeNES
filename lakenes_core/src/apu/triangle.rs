@@ -76,6 +76,10 @@ impl Triangle {
         if self.length_counter == 0 || self.linear_counter == 0 {
             return 0;
         }
+        // Period < 2: timer runs so fast the DAC averages to ~7.5 (nesdev).
+        if self.timer_period < 2 {
+            return 7;
+        }
         let seq = self.sequence_pos;
         if seq < 16 { 15 - seq } else { seq - 16 }
     }

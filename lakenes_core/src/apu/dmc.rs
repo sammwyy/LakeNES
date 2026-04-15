@@ -29,7 +29,6 @@ impl DMC {
             irq_enabled: false,
             loop_flag: false,
             rate_index: 0,
-            // Timer starts at the first period value so the first clock fires correctly
             timer: 0,
             output_level: 0,
             sample_address: 0xC000,
@@ -60,11 +59,11 @@ impl DMC {
     /// Clocked every CPU cycle. The DMC timer counts down and fires an output
     /// bit when it reaches zero, then reloads from the period table.
     pub fn step_timer(&mut self) {
-        if self.timer > 0 {
-            self.timer -= 1;
-        } else {
-            // Reload timer FIRST (period - 1 because this cycle is consumed)
-            self.timer = DMC_PERIOD_TABLE[self.rate_index as usize] - 1;
+        // Nesdev: timer counts down each CPU cycle; at 0 after decrement, reload period and clock.
+        // Starting a period with timer == rate yields one output clock every `rate` cycles.
+        self.timer = self.timer.wrapping_sub(1);
+        if self.timer == 0 {
+            self.timer = DMC_PERIOD_TABLE[self.rate_index as usize];
             self.clock_output();
         }
     }

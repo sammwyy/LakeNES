@@ -98,27 +98,43 @@ impl Pulse {
     }
 
     pub fn step_envelope(&mut self) {
+        // Period 0 in the volume nibble is treated as 16 (same as sweep period 0 → 8).
+        let period = if self.volume == 0 {
+            16
+        } else {
+            self.volume
+        };
         if self.envelope_start {
             self.envelope_start = false;
             self.envelope_vol = 15;
-            self.envelope_divider = self.volume;
-        } else {
-            if self.envelope_divider == 0 {
-                self.envelope_divider = self.volume;
-                if self.envelope_vol > 0 {
-                    self.envelope_vol -= 1;
-                } else if self.length_halt {
-                    self.envelope_vol = 15;
-                }
-            } else {
-                self.envelope_divider -= 1;
+            self.envelope_divider = period;
+        } else if self.envelope_divider == 0 {
+            self.envelope_divider = period;
+            if self.envelope_vol > 0 {
+                self.envelope_vol -= 1;
+            } else if self.length_halt {
+                self.envelope_vol = 15;
             }
+        } else {
+            self.envelope_divider -= 1;
         }
     }
 
     pub fn step_sweep(&mut self) {
+        let period = if self.sweep_period == 0 {
+            8
+        } else {
+            self.sweep_period
+        };
+
+        if self.sweep_reload {
+            self.sweep_reload = false;
+            self.sweep_divider = period;
+            return;
+        }
+
         if self.sweep_divider == 0 {
-            if self.sweep_enabled && self.sweep_period > 0 && self.sweep_shift > 0 {
+            if self.sweep_enabled && self.sweep_shift > 0 {
                 let change = self.timer_period >> self.sweep_shift;
                 if self.sweep_negate {
                     if self.timer_period >= 8 {
@@ -130,19 +146,15 @@ impl Pulse {
                                 }
                                 self.timer_period = np;
                             }
-                        } else {
-                            if self.timer_period > change {
-                                self.timer_period -= change;
-                            }
+                        } else if self.timer_period > change {
+                            self.timer_period -= change;
                         }
                     }
-                } else {
-                    if self.timer_period + change < 0x800 {
-                        self.timer_period += change;
-                    }
+                } else if self.timer_period + change < 0x800 {
+                    self.timer_period += change;
                 }
             }
-            self.sweep_divider = self.sweep_period;
+            self.sweep_divider = period;
         } else {
             self.sweep_divider -= 1;
         }

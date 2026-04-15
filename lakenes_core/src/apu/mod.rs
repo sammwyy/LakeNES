@@ -178,6 +178,9 @@ pub struct APU {
     pub noise: Noise,
     pub dmc: DMC,
     frame_counter: FrameCounter,
+    /// Master CPU cycles since APU reset: pulse/noise timers use φ2-style half-rate stepping.
+    /// Must not be tied to the frame counter (that counter resets each frame / on $4017).
+    waveform_master_cycles: u64,
     filters: [AudioFilter; 3],
     dmc_cpu_stall_cycles: u64,
 }
@@ -199,6 +202,7 @@ impl APU {
             noise: Noise::new(),
             dmc: DMC::new(),
             frame_counter: FrameCounter::new(),
+            waveform_master_cycles: 0,
             filters: Self::make_filters(44_100.0),
             dmc_cpu_stall_cycles: 0,
         }
@@ -253,8 +257,14 @@ impl APU {
                     self.dmc.bytes_remaining = 0;
                     self.dmc.sample_buffer = None;
                 } else if self.dmc.bytes_remaining == 0 {
+                    // Fresh start: reload reader state and phase the rate timer (nesdev DMC).
                     self.dmc.current_address = self.dmc.sample_address;
                     self.dmc.bytes_remaining = self.dmc.sample_length;
+                    self.dmc.sample_buffer = None;
+                    self.dmc.shift_register = 0;
+                    self.dmc.bits_remaining = 8;
+                    self.dmc.silent = true;
+                    self.dmc.timer = dmc::DMC_PERIOD_TABLE[self.dmc.rate_index as usize];
                 }
                 // Writing $4015 always clears the DMC IRQ flag
                 self.dmc.irq_flag = false;
@@ -294,8 +304,9 @@ impl APU {
         if self.frame_counter.irq_flag {
             res |= 0x40;
         }
-        // Reading $4015 clears frame counter IRQ
+        // Reading $4015 clears frame IRQ and DMC IRQ (2A03 status register).
         self.frame_counter.irq_flag = false;
+        self.dmc.irq_flag = false;
         res
     }
 
@@ -307,25 +318,20 @@ impl APU {
     where
         F: FnMut(u16) -> u8,
     {
-        // Triangle ticks every CPU cycle; pulse/noise every 2 CPU cycles.
-        // The frame counter also tracks individual CPU cycles.
+        // Triangle: every CPU cycle. Pulse: every 2 CPU cycles (M2). Frame counter: every cycle.
         let fc = self.frame_counter.tick();
 
-        // Triangle clocks every cycle
+        self.waveform_master_cycles = self.waveform_master_cycles.wrapping_add(1);
+
         self.triangle.step_timer();
 
-        // Pulse clocks every *other* cycle
-        // We use the frame_counter cycle parity (odd cycles in reference)
-        let odd = (self.frame_counter.cycle & 1) == 1;
-        if odd {
+        let tick_pulse = (self.waveform_master_cycles & 1) == 1;
+        if tick_pulse {
             self.pulse1.step_timer();
             self.pulse2.step_timer();
         }
-
-        // Noise should follow the same half-rate timer stepping as pulse channels.
-        if odd {
-            self.noise.step_timer();
-        }
+        // Noise divider runs at CPU rate; period table values are in CPU cycles (not M2).
+        self.noise.step_timer();
 
         // DMC: reader first if channel is enabled and has samples,
         // but timer always clocks to maintain internal phase.
@@ -335,8 +341,8 @@ impl APU {
                 // Fine-grain parity/phase is not modeled yet.
                 self.dmc_cpu_stall_cycles = self.dmc_cpu_stall_cycles.saturating_add(4);
             }
+            self.dmc.step_timer();
         }
-        self.dmc.step_timer();
 
         // Apply frame counter signals
         let (qf, hf, _irq) = fc;
