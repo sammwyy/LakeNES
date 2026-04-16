@@ -60,9 +60,22 @@ impl MMC4 {
 }
 
 impl Mapper for MMC4 {
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_ex(&mut self, addr: u16) -> u8 {
         match addr {
             0x6000..=0x7FFF => self.prg_ram[(addr - 0x6000) as usize],
+            _ => 0,
+        }
+    }
+
+    fn write_ex(&mut self, addr: u16, data: u8) {
+        match addr {
+            0x6000..=0x7FFF => self.prg_ram[(addr - 0x6000) as usize] = data,
+            _ => {}
+        }
+    }
+
+    fn read_prg(&mut self, addr: u16) -> u8 {
+        match addr {
             0x8000..=0xBFFF => {
                 let bank = self.prg_bank % self.num_prg_banks_16k;
                 let offset = bank * 16384 + (addr as usize - 0x8000);
@@ -80,7 +93,6 @@ impl Mapper for MMC4 {
 
     fn write_prg(&mut self, addr: u16, data: u8) {
         match addr {
-            0x6000..=0x7FFF => self.prg_ram[(addr - 0x6000) as usize] = data,
             0xA000..=0xAFFF => self.prg_bank = (data & 0x0F) as usize,
             0xB000..=0xBFFF => self.chr_banks[0] = (data & 0x1F) as usize,
             0xC000..=0xCFFF => self.chr_banks[1] = (data & 0x1F) as usize,

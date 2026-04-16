@@ -196,7 +196,7 @@ impl MMC5 {
 }
 
 impl Mapper for MMC5 {
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_ex(&mut self, addr: u16) -> u8 {
         match addr {
             0x5015 => 0, // Sound stub
             0x5204 => {
@@ -215,7 +215,7 @@ impl Mapper for MMC5 {
                     0
                 }
             }
-            0x6000..=0xFFFF => {
+            0x6000..=0x7FFF => {
                 let (is_ram, offset) = self.get_prg_offset(addr);
                 if is_ram {
                     let len = self.prg_ram.len();
@@ -229,7 +229,7 @@ impl Mapper for MMC5 {
         }
     }
 
-    fn write_prg(&mut self, addr: u16, data: u8) {
+    fn write_ex(&mut self, addr: u16, data: u8) {
         match addr {
             0x5100 => self.prg_mode = data & 0x03,
             0x5101 => self.chr_mode = data & 0x03,
@@ -269,7 +269,7 @@ impl Mapper for MMC5 {
                     _ => {}
                 }
             }
-            0x6000..=0xFFFF => {
+            0x6000..=0x7FFF => {
                 if self.is_ram_writable() {
                     let (is_ram, offset) = self.get_prg_offset(addr);
                     if is_ram {
@@ -277,6 +277,27 @@ impl Mapper for MMC5 {
                         self.prg_ram[offset % len] = data;
                     }
                 }
+            }
+            _ => {}
+        }
+    }
+
+    fn read_prg(&mut self, addr: u16) -> u8 {
+        match addr {
+            0x8000..=0xFFFF => {
+                let (_is_ram, offset) = self.get_prg_offset(addr);
+                let len = self.prg_rom.len();
+                self.prg_rom[offset % len]
+            }
+            _ => 0,
+        }
+    }
+
+    fn write_prg(&mut self, addr: u16, _data: u8) {
+        match addr {
+            0x8000..=0xFFFF => {
+                // MMC5 usually doesn't have registers in PRG ROM space, but some variants might.
+                // Standard MMC5 registers are in $5100-$52FF.
             }
             _ => {}
         }

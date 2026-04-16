@@ -136,9 +136,24 @@ impl MMC3 {
 }
 
 impl Mapper for MMC3 {
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_ex(&mut self, addr: u16) -> u8 {
         match addr {
             0x6000..=0x7FFF => self.prg_ram[(addr - 0x6000) as usize],
+            _ => 0,
+        }
+    }
+
+    fn write_ex(&mut self, addr: u16, data: u8) {
+        match addr {
+            0x6000..=0x7FFF => {
+                self.prg_ram[(addr - 0x6000) as usize] = data;
+            }
+            _ => {}
+        }
+    }
+
+    fn read_prg(&mut self, addr: u16) -> u8 {
+        match addr {
             0x8000..=0xFFFF => {
                 let bank = self.read_prg_bank(addr);
                 let offset = (bank * 8192) + (addr as usize & 0x1FFF);
@@ -154,9 +169,6 @@ impl Mapper for MMC3 {
 
     fn write_prg(&mut self, addr: u16, data: u8) {
         match addr {
-            0x6000..=0x7FFF => {
-                self.prg_ram[(addr - 0x6000) as usize] = data;
-            }
             0x8000..=0x9FFF => {
                 if (addr & 1) == 0 {
                     self.target_register = data & 0x07;

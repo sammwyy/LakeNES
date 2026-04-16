@@ -78,7 +78,7 @@ impl NJ0430 {
 }
 
 impl Mapper for NJ0430 {
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_ex(&mut self, addr: u16) -> u8 {
         match addr {
             0x5000..=0x5FFF => {
                 match self.submapper {
@@ -95,25 +95,11 @@ impl Mapper for NJ0430 {
                     0
                 }
             }
-            0x8000..=0xFFFF => {
-                if self.submapper == 3 && self.solder_pad_enabled {
-                    // Solder path returns 2nd bit as well? Spec says 2-bit value.
-                    // We'll return 0 for the menu selection.
-                    0
-                } else {
-                    let offset = self.get_prg_offset(addr);
-                    if offset < self.prg_rom.len() {
-                        self.prg_rom[offset]
-                    } else {
-                        0
-                    }
-                }
-            }
             _ => 0,
         }
     }
 
-    fn write_prg(&mut self, addr: u16, data: u8) {
+    fn write_ex(&mut self, addr: u16, data: u8) {
         match addr {
             0x4800 => {
                 self.mirroring = if (data & 0x01) != 0 {
@@ -150,6 +136,28 @@ impl Mapper for NJ0430 {
             _ => {}
         }
     }
+
+    fn read_prg(&mut self, addr: u16) -> u8 {
+        match addr {
+            0x8000..=0xFFFF => {
+                if self.submapper == 3 && self.solder_pad_enabled {
+                    // Solder path returns 2nd bit as well? Spec says 2-bit value.
+                    // We'll return 0 for the menu selection.
+                    0
+                } else {
+                    let offset = self.get_prg_offset(addr);
+                    if offset < self.prg_rom.len() {
+                        self.prg_rom[offset]
+                    } else {
+                        0
+                    }
+                }
+            }
+            _ => 0,
+        }
+    }
+
+    fn write_prg(&mut self, _addr: u16, _data: u8) {}
 
     fn read_chr(&mut self, addr: u16) -> u8 {
         if (addr as usize) < self.chr_ram.len() {

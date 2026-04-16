@@ -167,7 +167,14 @@ impl Bus {
             }
             // Unallocated CPU I/O ($4018–$401F): nothing drives the bus.
             0x4018..=0x401F => self.cpu_data_bus,
-            0x4020..=0xFFFF => {
+            0x4020..=0x7FFF => {
+                if let Some(ref mut rom) = self.rom {
+                    rom.mapper.read_ex(addr)
+                } else {
+                    self.cpu_data_bus
+                }
+            }
+            0x8000..=0xFFFF => {
                 if let Some(ref mut rom) = self.rom {
                     rom.mapper.read_prg(addr)
                 } else {
@@ -211,7 +218,12 @@ impl Bus {
                     joypad.write(value);
                 }
             }
-            0x4020..=0xFFFF => {
+            0x4020..=0x7FFF => {
+                if let Some(ref mut rom) = self.rom {
+                    rom.mapper.write_ex(addr, value);
+                }
+            }
+            0x8000..=0xFFFF => {
                 if let Some(ref mut rom) = self.rom {
                     rom.mapper.write_prg(addr, value);
                 }

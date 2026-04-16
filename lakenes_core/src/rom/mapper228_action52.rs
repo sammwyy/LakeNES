@@ -57,12 +57,28 @@ impl Mapper228 {
 }
 
 impl Mapper for Mapper228 {
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_ex(&mut self, addr: u16) -> u8 {
         match addr {
             0x4020..=0x5FFF => {
                 let idx = (addr as usize - 0x4020) % 4;
                 self.regs[idx]
             }
+            _ => 0,
+        }
+    }
+
+    fn write_ex(&mut self, addr: u16, data: u8) {
+        match addr {
+            0x4020..=0x5FFF => {
+                let idx = (addr as usize - 0x4020) % 4;
+                self.regs[idx] = data & 0x0F; // 4 bits each
+            }
+            _ => {}
+        }
+    }
+
+    fn read_prg(&mut self, addr: u16) -> u8 {
+        match addr {
             0x8000..=0xFFFF => {
                 // Chip 2 is open bus
                 if self.prg_chip == 2 {
@@ -105,10 +121,6 @@ impl Mapper for Mapper228 {
 
     fn write_prg(&mut self, addr: u16, data: u8) {
         match addr {
-            0x4020..=0x5FFF => {
-                let idx = (addr as usize - 0x4020) % 4;
-                self.regs[idx] = data & 0x0F; // 4 bits each
-            }
             0x8000..=0xFFFF => {
                 self.update_banks(addr, data);
             }
