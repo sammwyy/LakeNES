@@ -1,5 +1,5 @@
 [workspace]
-members = ["lakenes_core", "lakenes_desktop", "lakenes_wasm"]
+members = ["lakenes_core", "lakenes_desktop", "lakenes_wasm", "lakenes_libretro"]
 resolver = "2"
 
 [profile.dev]

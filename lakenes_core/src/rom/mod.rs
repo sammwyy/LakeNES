@@ -55,7 +55,7 @@ pub enum ROMError {
     IncompleteData,
 }
 
-pub trait Mapper {
+pub trait Mapper: Send {
     fn read_prg(&mut self, addr: u16) -> u8;
     fn write_prg(&mut self, addr: u16, data: u8);
 
@@ -95,7 +95,7 @@ pub trait Mapper {
 }
 
 pub struct ROM {
-    pub mapper: Box<dyn Mapper>,
+    pub mapper: Box<dyn Mapper + Send>,
     pub mapper_id: u16,
     pub prg_size: usize,
     pub chr_size: usize,
@@ -244,7 +244,7 @@ impl ROM {
         let prg_len = prg_rom.len();
         let chr_len = chr_rom.len();
 
-        let mapper: Box<dyn Mapper> = match mapper_id {
+        let mapper: Box<dyn Mapper + Send> = match mapper_id {
             0 => Box::new(NROM::new(
                 prg_rom,
                 chr_rom,
