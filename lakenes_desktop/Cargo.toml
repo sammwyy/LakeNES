@@ -3,6 +3,10 @@ name = "lakenes-desktop"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "lakenes"
+path = "src/main.rs"
+
 [dependencies]
 lakenes-core = { path = "../lakenes_core" }
 clap = { version = "4", features = ["derive"] }

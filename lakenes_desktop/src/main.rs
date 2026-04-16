@@ -43,7 +43,8 @@ fn main() {
         256,
         240,
         WindowOptions {
-            scale: minifb::Scale::X2,
+            resize: true,
+            scale_mode: minifb::ScaleMode::AspectRatioStretch,
             ..WindowOptions::default()
         },
     )
