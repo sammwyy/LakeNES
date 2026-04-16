@@ -248,9 +248,17 @@
             opacity: 0.9;
         }
 
-        .test-rom-tag.apu { color: #f87171; }
-        .test-rom-tag.cpu { color: #4ade80; }
-        .test-rom-tag.ppu { color: #60a5fa; }
+        .test-rom-tag.apu {
+            color: #f87171;
+        }
+
+        .test-rom-tag.cpu {
+            color: #4ade80;
+        }
+
+        .test-rom-tag.ppu {
+            color: #60a5fa;
+        }
 
         /* UI Controls */
         .info-group {
@@ -702,7 +710,7 @@
             <div id="tab-cpu" class="tab-content">
                 <div class="cpu-controls">
                     <button id="btn-pause" class="btn-secondary" onclick="togglePause()">PAUSE</button>
-                    <button id="btn-step" class="btn-secondary" onclick="stepInstruction()">STEP</button>
+                    <button id="btn-step" class="btn-secondary" onclick="stepFrame()">STEP</button>
                 </div>
 
                 <div class="cpu-debug-info">

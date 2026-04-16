@@ -1,5 +1,5 @@
 pub const DMC_PERIOD_TABLE: [u16; 16] = [
-    428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54,
+    214, 190, 170, 160, 143, 127, 113, 107, 95, 80, 71, 64, 53, 42, 36, 27,
 ];
 
 pub struct DMC {
@@ -56,16 +56,14 @@ impl DMC {
         self.output_level = val & 0x7F;
     }
 
-    /// Clocked every CPU cycle. The DMC timer counts down and fires an output
-    /// bit when it reaches zero, then reloads from the period table.
+    /// Clocked every APU cycle (every second CPU cycle).
     #[inline(always)]
     pub fn step_timer(&mut self) {
-        // Nesdev: timer counts down each CPU cycle; at 0 after decrement, reload period and clock.
-        // Starting a period with timer == rate yields one output clock every `rate` cycles.
-        self.timer = self.timer.wrapping_sub(1);
         if self.timer == 0 {
-            self.timer = DMC_PERIOD_TABLE[self.rate_index as usize];
+            self.timer = DMC_PERIOD_TABLE[self.rate_index as usize].saturating_sub(1);
             self.clock_output();
+        } else {
+            self.timer -= 1;
         }
     }
 

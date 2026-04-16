@@ -113,10 +113,6 @@ impl WasmNes {
         vec![pc as u32, a as u32, x as u32, y as u32, sp as u32, p as u32]
     }
 
-    pub fn step_instruction(&mut self) {
-        self.nes.step_instruction();
-    }
-
     pub fn set_paused(&mut self, paused: bool) {
         self.nes.paused = paused;
     }

@@ -144,15 +144,9 @@ fn main() {
 
             let mut cycles_this_frame = 0;
 
-            // Extract references to components once per frame (or once per loop)
-            // But we need to use 'self.bus' which is part of 'nes_instance'.
-            // However, we can use 'nes_instance.bus' components.
-
             while cycles_this_frame < 29780 {
-                // If audio buffer is getting too full, stall the emulation to sync with host audio rate.
-                // This prevents dropping samples and the resulting "echo/jitter".
-                if producer.occupied_len() > 16384 {
-                    std::thread::sleep(Duration::from_millis(1));
+                if producer.occupied_len() > 8192 {
+                    std::thread::sleep(Duration::from_micros(500));
                     continue;
                 }
 
@@ -175,11 +169,13 @@ fn main() {
                 .update_with_buffer(nes_instance.get_frame_buffer(), 256, 240)
                 .unwrap();
 
+            // Supplementary sleep to handle very fast emulation without over-filling the audio buffer.
             next_frame_deadline += frame_time;
             let now = Instant::now();
             if next_frame_deadline > now {
                 std::thread::sleep(next_frame_deadline - now);
-            } else {
+            } else if now - next_frame_deadline > Duration::from_millis(100) {
+                // Reset deadline if we fall too far behind (e.g. window move/resize)
                 next_frame_deadline = now;
             }
         } else {

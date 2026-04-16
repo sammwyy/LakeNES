@@ -124,6 +124,9 @@ impl NES {
 
     pub fn step_cycle(&mut self) -> u64 {
         let mut cpu_cycles = self.cpu.step(&mut self.bus);
+
+        // Capture any DMC stalls generated during APU steps from the previous instruction's burst.
+        // We add them to the current instruction's total cycle duration.
         let dma_stall = self.bus.take_cpu_stall_cycles();
         cpu_cycles = cpu_cycles.saturating_add(dma_stall);
 
@@ -153,6 +156,7 @@ impl NES {
                     self.audio_buffer.push_back(sample);
                 }
             }
+            // If the APU steps triggered a DMC fetch, add those cycles to the stall pool.
             let dmc_stall = apu_ref.take_dmc_cpu_stall_cycles();
             if dmc_stall > 0 {
                 self.bus.add_cpu_stall_cycles(dmc_stall);

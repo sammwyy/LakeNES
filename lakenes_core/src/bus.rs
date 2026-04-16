@@ -144,7 +144,7 @@ impl Bus {
             0x4000..=0x4014 => self.cpu_data_bus,
             0x4015 => {
                 if let Some(ref mut apu) = self.apu {
-                    // Bit 5 is not driven by the APU; comes from open bus.
+                    // Bit 5 is not driven by the APU; comes from open bus (last value on data bus).
                     (apu.read(addr) & 0xDF) | (self.cpu_data_bus & 0x20)
                 } else {
                     self.cpu_data_bus

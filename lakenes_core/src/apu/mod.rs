@@ -2,11 +2,13 @@ pub mod dmc;
 pub mod noise;
 pub mod pulse;
 pub mod triangle;
+pub mod units;
 
 pub use dmc::DMC;
 pub use noise::Noise;
 pub use pulse::Pulse;
 pub use triangle::Triangle;
+pub use units::{AudioFilter, Envelope, LengthCounter, LinearCounter, Sweep};
 
 use crate::bus::BusDevice;
 
@@ -15,69 +17,7 @@ pub(crate) const LENGTH_TABLE: [u8; 32] = [
     192, 24, 72, 26, 16, 28, 32, 30,
 ];
 
-// First-order IIR audio filter
-struct AudioFilter {
-    b0: f32,
-    b1: f32,
-    a1: f32,
-    prev_x: f32,
-    prev_y: f32,
-}
-
-// Audio Mixer Lookup Tables
-impl AudioFilter {
-    const PI: f32 = core::f32::consts::PI;
-
-    #[inline(always)]
-    fn high_pass(sample_rate: f32, cutoff: f32) -> Self {
-        let c = sample_rate / Self::PI / cutoff;
-        let a0i = 1.0 / (1.0 + c);
-        Self {
-            b0: c * a0i,
-            b1: -(c * a0i),
-            a1: (1.0 - c) * a0i,
-            prev_x: 0.0,
-            prev_y: 0.0,
-        }
-    }
-
-    #[inline(always)]
-    fn low_pass(sample_rate: f32, cutoff: f32) -> Self {
-        let c = sample_rate / Self::PI / cutoff;
-        let a0i = 1.0 / (1.0 + c);
-        Self {
-            b0: a0i,
-            b1: a0i,
-            a1: (1.0 - c) * a0i,
-            prev_x: 0.0,
-            prev_y: 0.0,
-        }
-    }
-
-    #[inline(always)]
-    fn tick(&mut self, x: f32) -> f32 {
-        let y = self.b0 * x + self.b1 * self.prev_x - self.a1 * self.prev_y;
-        self.prev_y = y;
-        self.prev_x = x;
-        y
-    }
-}
-
 // Precise APU frame counter
-//
-// NES NTSC exact cycle counts (from nesdev wiki):
-//  Mode 0 (4-step):
-//    Quarter @  7,457
-//    Half    @ 14,913
-//    Quarter @ 22,371
-//    IRQ     @ 29,828
-//    Half+IRQ@ 29,829  (also clears frame counter)
-//  Mode 1 (5-step):
-//    Quarter @  7,457
-//    Half    @ 14,913
-//    Quarter @ 22,371
-//    (nothing at 29,828-30k)
-//    Half    @ 37,281
 struct FrameCounter {
     cycle: u32,
     mode_5step: bool,
@@ -187,7 +127,6 @@ impl FrameCounter {
     }
 }
 
-// APU
 pub struct APU {
     pub pulse1: Pulse,
     pub pulse2: Pulse,
@@ -195,20 +134,15 @@ pub struct APU {
     pub noise: Noise,
     pub dmc: DMC,
     frame_counter: FrameCounter,
-    /// Master CPU cycles since APU reset: pulse/noise timers use φ2-style half-rate stepping.
-    /// Must not be tied to the frame counter (that counter resets each frame / on $4017).
     waveform_master_cycles: u64,
     filters: [AudioFilter; 3],
     dmc_cpu_stall_cycles: u64,
-    // Volume controls (normalized 1.0 = 100%)
     pub volume_master: f32,
     pub volume_pulse1: f32,
     pub volume_pulse2: f32,
     pub volume_triangle: f32,
     pub volume_noise: f32,
     pub volume_dmc: f32,
-
-    // Resampling accumulation
     sample_accumulator: f32,
     sample_count: u32,
     last_sample: f32,
@@ -218,7 +152,7 @@ impl APU {
     fn make_filters(sample_rate: f32) -> [AudioFilter; 3] {
         [
             AudioFilter::high_pass(sample_rate, 90.0),
-            AudioFilter::high_pass(sample_rate, 20.0),
+            AudioFilter::high_pass(sample_rate, 440.0),
             AudioFilter::low_pass(sample_rate, 14_000.0),
         ]
     }
@@ -246,8 +180,6 @@ impl APU {
         }
     }
 
-    /// Set volumes. `master` is the global gain.
-    /// All values are percentages (100 = 1.0, 200 = 2.0, etc.).
     pub fn set_volumes(
         &mut self,
         master: f32,
@@ -292,29 +224,27 @@ impl APU {
             0x4012 => self.dmc.sample_address = 0xC000 | ((val as u16) << 6),
             0x4013 => self.dmc.sample_length = ((val as u16) << 4) + 1,
             0x4015 => {
+                // Status register ($4015 bits 0-4 are enables)
                 self.pulse1.enabled = (val & 0x01) != 0;
                 self.pulse2.enabled = (val & 0x02) != 0;
                 self.triangle.enabled = (val & 0x04) != 0;
                 self.noise.enabled = (val & 0x08) != 0;
                 self.dmc.enabled = (val & 0x10) != 0;
 
-                if !self.pulse1.enabled {
-                    self.pulse1.length_counter = 0;
-                }
-                if !self.pulse2.enabled {
-                    self.pulse2.length_counter = 0;
-                }
-                if !self.triangle.enabled {
-                    self.triangle.length_counter = 0;
-                }
-                if !self.noise.enabled {
-                    self.noise.length_counter = 0;
-                }
+                self.pulse1.length.enabled = self.pulse1.enabled;
+                self.pulse2.length.enabled = self.pulse2.enabled;
+                self.triangle.length.enabled = self.triangle.enabled;
+                self.noise.length.enabled = self.noise.enabled;
+
+                if !self.pulse1.enabled { self.pulse1.length.count = 0; }
+                if !self.pulse2.enabled { self.pulse2.length.count = 0; }
+                if !self.triangle.enabled { self.triangle.length.count = 0; }
+                if !self.noise.enabled { self.noise.length.count = 0; }
+
                 if !self.dmc.enabled {
                     self.dmc.bytes_remaining = 0;
                     self.dmc.sample_buffer = None;
                 } else if self.dmc.bytes_remaining == 0 {
-                    // Fresh start: reload reader state and phase the rate timer (nesdev DMC).
                     self.dmc.current_address = self.dmc.sample_address;
                     self.dmc.bytes_remaining = self.dmc.sample_length;
                     self.dmc.sample_buffer = None;
@@ -323,15 +253,10 @@ impl APU {
                     self.dmc.silent = true;
                     self.dmc.timer = dmc::DMC_PERIOD_TABLE[self.dmc.rate_index as usize];
                 }
-                // Writing $4015 always clears the DMC IRQ flag
                 self.dmc.irq_flag = false;
             }
             0x4017 => {
-                let delay = if (self.waveform_master_cycles % 2) == 0 {
-                    3
-                } else {
-                    4
-                };
+                let delay = if (self.waveform_master_cycles % 2) == 0 { 3 } else { 4 };
                 self.frame_counter.schedule_reset(val, delay);
             }
             _ => {}
@@ -340,28 +265,13 @@ impl APU {
 
     pub fn read_status(&mut self) -> u8 {
         let mut res = 0;
-        if self.pulse1.length_counter > 0 {
-            res |= 0x01;
-        }
-        if self.pulse2.length_counter > 0 {
-            res |= 0x02;
-        }
-        if self.triangle.length_counter > 0 {
-            res |= 0x04;
-        }
-        if self.noise.length_counter > 0 {
-            res |= 0x08;
-        }
-        if self.dmc.bytes_remaining > 0 {
-            res |= 0x10;
-        }
-        if self.dmc.irq_flag {
-            res |= 0x80;
-        }
-        if self.frame_counter.irq_flag {
-            res |= 0x40;
-        }
-        // Reading $4015 clears frame IRQ and DMC IRQ (2A03 status register).
+        if self.pulse1.length.count > 0 { res |= 0x01; }
+        if self.pulse2.length.count > 0 { res |= 0x02; }
+        if self.triangle.length.count > 0 { res |= 0x04; }
+        if self.noise.length.count > 0 { res |= 0x08; }
+        if self.dmc.bytes_remaining > 0 { res |= 0x10; }
+        if self.dmc.irq_flag { res |= 0x80; }
+        if self.frame_counter.irq_flag { res |= 0x40; }
         self.frame_counter.irq_flag = false;
         self.dmc.irq_flag = false;
         res
@@ -376,22 +286,16 @@ impl APU {
     where
         F: FnMut(u16) -> u8,
     {
-        // Triangle: every CPU cycle. Pulse: every 2 CPU cycles (M2). Frame counter: every cycle.
         let fc = self.frame_counter.tick();
-
         self.waveform_master_cycles = self.waveform_master_cycles.wrapping_add(1);
 
+        // Timers
         self.triangle.step_timer();
-
         if (self.waveform_master_cycles & 1) == 0 {
             self.pulse1.step_timer();
             self.pulse2.step_timer();
         }
-        // Noise divider runs at CPU rate; period table values are in CPU cycles (not M2).
         self.noise.step_timer();
-
-        // DMC: reader first if channel is enabled and has samples,
-        // but timer always clocks to maintain internal phase.
         if self.dmc.enabled {
             if self.dmc.step_reader(&mut read_mem) {
                 self.dmc_cpu_stall_cycles = self.dmc_cpu_stall_cycles.saturating_add(4);
@@ -399,25 +303,25 @@ impl APU {
             self.dmc.step_timer();
         }
 
-        // Accumulate raw sample for downsampling
+        // Downsampling accumulation
         self.sample_accumulator += self.get_raw_sample();
         self.sample_count += 1;
 
-        // Apply frame counter signals
+        // Frame Counter signals
         let (qf, hf, _irq) = fc;
         if qf {
-            self.pulse1.step_envelope();
-            self.pulse2.step_envelope();
-            self.noise.step_envelope();
-            self.triangle.step_linear();
+            self.pulse1.envelope.tick();
+            self.pulse2.envelope.tick();
+            self.noise.envelope.tick();
+            self.triangle.linear.tick();
         }
         if hf {
-            self.pulse1.step_length();
-            self.pulse1.step_sweep();
-            self.pulse2.step_length();
-            self.pulse2.step_sweep();
-            self.triangle.step_length();
-            self.noise.step_length();
+            self.pulse1.length.tick();
+            self.pulse1.sweep.tick(&mut self.pulse1.timer_period);
+            self.pulse2.length.tick();
+            self.pulse2.sweep.tick(&mut self.pulse2.timer_period);
+            self.triangle.length.tick();
+            self.noise.length.tick();
         }
     }
 
@@ -429,15 +333,8 @@ impl APU {
         let n = self.noise.output() as f32 * self.volume_noise;
         let d = self.dmc.output_level as f32 * self.volume_dmc;
 
-        // Pulse mixer
         let pulse_sum = p1 + p2;
-        let pulse_out = if pulse_sum > 0.0 {
-            95.88 / (8128.0 / pulse_sum + 100.0)
-        } else {
-            0.0
-        };
-
-        // TND mixer
+        let pulse_out = if pulse_sum > 0.0 { 95.88 / (8128.0 / pulse_sum + 100.0) } else { 0.0 };
         let tnd_out = if t > 0.0 || n > 0.0 || d > 0.0 {
             159.79 / (1.0 / (t / 8227.0 + n / 12241.0 + d / 22638.0) + 100.0)
         } else {
@@ -449,25 +346,13 @@ impl APU {
 
     #[inline(always)]
     pub fn output_sample(&mut self) -> f32 {
-        if self.sample_count == 0 {
-            return self.last_sample;
-        }
-
+        if self.sample_count == 0 { return self.last_sample; }
         let mut out = self.sample_accumulator / self.sample_count as f32;
         self.sample_accumulator = 0.0;
         self.sample_count = 0;
-
-        // Apply filters (unrolled loop)
-        out = self.filters[0].tick(out);
-        out = self.filters[1].tick(out);
-        out = self.filters[2].tick(out);
-
+        for filter in &mut self.filters { out = filter.tick(out); }
         self.last_sample = out;
         out
-    }
-
-    fn last_filtered_sample(&self) -> f32 {
-        self.last_sample
     }
 
     pub fn take_dmc_cpu_stall_cycles(&mut self) -> u64 {
@@ -479,10 +364,7 @@ impl APU {
 
 impl BusDevice for APU {
     fn read(&mut self, addr: u16) -> u8 {
-        match addr {
-            0x4015 => self.read_status(),
-            _ => 0,
-        }
+        match addr { 0x4015 => self.read_status(), _ => 0 }
     }
     fn write(&mut self, addr: u16, value: u8) {
         self.write_register(addr, value);
