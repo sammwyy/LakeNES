@@ -22,6 +22,7 @@ use mapper005_mmc5::MMC5;
 use mapper007_axrom::AxROM;
 use mapper009_mmc2::MMC2;
 use mapper010_mmc4::MMC4;
+use crate::fds::FDS;
 use mapper174_ntdec::NTDec5in1;
 use mapper178_nj0430::NJ0430;
 use mapper228_action52::Mapper228;
@@ -86,7 +87,11 @@ pub trait Mapper {
     fn write_ppu(&mut self, _addr: u16, _data: u8, _vram: &mut [u8]) -> bool {
         false
     }
+    /// Loads an external BIOS (like DISKSYS.ROM for FDS) into the mapper.
+    fn load_bios(&mut self, _bios_data: &[u8]) {}
     fn reset(&mut self) {}
+    /// Clocked every CPU cycle, useful for FDS or other CPU cycle based mappers.
+    fn step_cpu(&mut self, _cycles: u64) {}
 }
 
 pub struct ROM {
@@ -103,11 +108,30 @@ impl ROM {
             return Err(ROMError::IncompleteData);
         }
 
-        let header = &bytes[0..NES_HEADER_SIZE];
+        let header = &bytes[0..4];
 
-        if &header[0..4] != b"NES\x1A" {
+        let is_fds = header == b"FDS\x1A" || (bytes.len() >= 65500 && bytes[0] == 0x01 && bytes.len() % 65500 == 0);
+
+        if is_fds {
+            let mapper_id = 20;
+            let prg_size = 32768; // Ram sizes
+            let chr_size = 8192;
+            let mapper = Box::new(FDS::new(bytes.to_vec()));
+            log::info!("FDS format intercepted: Mapper 20");
+            return Ok(Self {
+                mapper,
+                mapper_id,
+                prg_size,
+                chr_size,
+                timing: TimingMode::Ntsc,
+            });
+        }
+
+        if header != b"NES\x1A" {
             return Err(ROMError::InvalidHeader);
         }
+
+        let header = &bytes[0..NES_HEADER_SIZE];
 
         // Detect NES 2.0: bits 2-3 of byte 7 == 0b10
         let is_nes2 = (header[7] & 0x0C) == 0x08;
@@ -242,6 +266,7 @@ impl ROM {
             7 => Box::new(AxROM::new(prg_rom, chr_rom)),
             9 => Box::new(MMC2::new(prg_rom, chr_rom, mirroring_mode)),
             10 => Box::new(MMC4::new(prg_rom, chr_rom, mirroring_mode)),
+            20 => Box::new(FDS::new(bytes.to_vec())),
             228 => Box::new(Mapper228::new(prg_rom, chr_rom)),
             174 => Box::new(NTDec5in1::new(prg_rom, chr_rom)),
             178 => Box::new(NJ0430::new(prg_rom, submapper)),

@@ -25,7 +25,15 @@ fn main() {
 
     let mut nes = if let Some(rom_path) = args.rom {
         let rom_data = fs::read(rom_path).expect("Failed to read ROM file");
-        Some(NES::new(&rom_data))
+        let mut nes_inst = NES::new(&rom_data);
+        if let Ok(bios_data) = fs::read("disksys.rom") {
+            nes_inst.load_bios(&bios_data);
+            nes_inst.reset_cpu();
+            log::info!("Loaded disksys.rom.");
+        } else {
+            log::warn!("disksys.rom not found in current directory. FDS games may not boot.");
+        }
+        Some(nes_inst)
     } else {
         None
     };
@@ -101,6 +109,14 @@ fn main() {
                     Ok(data) => {
                         nes = Some(NES::new(&data));
                         if let Some(ref mut nes_instance) = nes {
+                            // Try loading disksys.rom
+                            if let Ok(bios_data) = fs::read("disksys.rom") {
+                                nes_instance.load_bios(&bios_data);
+                                nes_instance.reset_cpu();
+                                log::info!("Loaded disksys.rom.");
+                            } else {
+                                log::warn!("disksys.rom not found in current directory. FDS games may not boot.");
+                            }
                             nes_instance.set_audio_sample_rate(sample_rate);
                             nes_instance.set_apu_volumes(100.0, 100.0, 100.0, 100.0, 100.0, 100.0);
                         }

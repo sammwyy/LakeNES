@@ -4,6 +4,7 @@ extern crate alloc;
 
 pub mod apu;
 pub mod bus;
+pub mod fds;
 pub mod cpu;
 pub mod joypad;
 pub mod memory;
@@ -102,7 +103,7 @@ impl NES {
 
     pub fn soft_reset(&mut self) {
         self.bus.reset(false);
-        self.cpu.reset(&mut self.bus);
+        self.reset_cpu();
         self.master_cpu_cycles = 0;
         self.master_ppu_cycles = 0;
         self.master_apu_cycles = 0;
@@ -137,6 +138,10 @@ impl NES {
             if let (Some(ppu), Some(rom)) = (self.bus.ppu.as_mut(), self.bus.rom.as_mut()) {
                 ppu.step_many((dma_stall * 3) as usize, &mut *rom.mapper);
             }
+        }
+
+        if let Some(rom) = self.bus.rom.as_mut() {
+            rom.mapper.step_cpu(cpu_cycles);
         }
 
         let target_cpu = self.master_cpu_cycles.saturating_add(cpu_cycles);
@@ -252,6 +257,16 @@ impl NES {
         } else {
             alloc::vec![]
         }
+    }
+
+    pub fn load_bios(&mut self, bios_data: &[u8]) {
+        if let Some(ref mut rom) = self.bus.rom {
+            rom.mapper.load_bios(bios_data);
+        }
+    }
+
+    pub fn reset_cpu(&mut self) {
+        self.cpu.reset(&mut self.bus);
     }
 
     pub fn total_frames(&self) -> u64 {
