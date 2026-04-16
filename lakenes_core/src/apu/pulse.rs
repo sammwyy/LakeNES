@@ -78,6 +78,7 @@ impl Pulse {
         if self.enabled {
             self.length_counter = LENGTH_TABLE[((val >> 3) & 0x1F) as usize];
         }
+        self.timer = self.timer_period;
         self.sequence_pos = 0;
         self.envelope_start = true;
     }
@@ -121,31 +122,19 @@ impl Pulse {
     #[inline(always)]
     pub fn step_sweep(&mut self) {
         if self.sweep_reload {
-            self.sweep_reload = false;
+            // Per NES hardware: if the divider counter was already 0 when the reload fires,
+            // the period adjustment also takes effect before the counter is reloaded.
+            if self.sweep_divider == 0 {
+                self.adjust_period();
+            }
             self.sweep_divider = self.sweep_period;
+            self.sweep_reload = false;
             return;
         }
 
         if self.sweep_divider == 0 {
             if self.sweep_enabled && self.sweep_shift > 0 {
-                let change = self.timer_period >> self.sweep_shift;
-                if self.sweep_negate {
-                    if self.timer_period >= 8 {
-                        if self.channel == 1 {
-                            if self.timer_period > change {
-                                let mut np = self.timer_period - change;
-                                if np > 0 {
-                                    np -= 1;
-                                }
-                                self.timer_period = np;
-                            }
-                        } else if self.timer_period > change {
-                            self.timer_period -= change;
-                        }
-                    }
-                } else if self.timer_period + change < 0x800 {
-                    self.timer_period += change;
-                }
+                self.adjust_period();
             }
             self.sweep_divider = self.sweep_period;
         } else {
@@ -153,14 +142,42 @@ impl Pulse {
         }
     }
 
+    /// Apply the sweep period update.  Separated from `step_sweep` to avoid duplication.
+    #[inline(always)]
+    fn adjust_period(&mut self) {
+        if !self.sweep_enabled || self.sweep_shift == 0 {
+            return;
+        }
+        let change = self.timer_period >> self.sweep_shift;
+        if self.sweep_negate {
+            // Pulse 1 uses one's-complement negation (subtracts shifted - 1).
+            // Pulse 2 uses two's-complement negation (subtracts shifted).
+            let result = if self.channel == 1 {
+                self.timer_period.saturating_sub(change).saturating_sub(1)
+            } else {
+                self.timer_period.saturating_sub(change)
+            };
+            self.timer_period = result;
+        } else {
+            let target = self.timer_period + change;
+            if target <= 0x7FF {
+                self.timer_period = target;
+            }
+        }
+    }
+
     #[inline(always)]
     pub fn output(&self) -> u8 {
-        if !self.enabled
-            || self.length_counter == 0
-            || self.timer_period < 8
-            || self.timer_period > 0x7FF
-        {
+        if !self.enabled || self.length_counter == 0 || self.timer_period < 8 {
             return 0;
+        }
+        // The sweep unit continuously computes the target period.  When that target would
+        // exceed $7FF the channel is silenced — this applies even when sweep is disabled.
+        if !self.sweep_negate && self.sweep_shift > 0 {
+            let change = self.timer_period >> self.sweep_shift;
+            if self.timer_period + change > 0x7FF {
+                return 0;
+            }
         }
         if DUTY_TABLE[self.duty as usize][self.sequence_pos as usize] == 0 {
             return 0;

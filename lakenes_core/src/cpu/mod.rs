@@ -92,7 +92,7 @@ impl CPU {
 
     fn handle_irq(&mut self, bus: &mut Bus) {
         self.push_word(bus, self.pc);
-        self.push_byte(bus, self.p & !FLAG_B);
+        self.push_byte(bus, (self.p | FLAG_U) & !FLAG_B);
         self.set_flag(FLAG_I, true);
 
         let lo = bus.read_cpu(IRQ_VECTOR) as u16;

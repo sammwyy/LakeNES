@@ -13,6 +13,11 @@ pub struct MMC3 {
     prg_bank_mode: bool,
     chr_inversion: bool,
     mirroring: Mirroring,
+    four_screen: bool,
+
+    // $A001 — WRAM control
+    wram_enabled: bool,
+    wram_write_protect: bool,
 
     // IRQ
     irq_counter: u8,
@@ -39,6 +44,7 @@ impl MMC3 {
         } else {
             0
         };
+        let four_screen = initial_mirroring == Mirroring::FourScreen;
 
         Self {
             prg_rom,
@@ -49,6 +55,9 @@ impl MMC3 {
             prg_bank_mode: false,
             chr_inversion: false,
             mirroring: initial_mirroring,
+            four_screen,
+            wram_enabled: true,
+            wram_write_protect: false,
             irq_counter: 0,
             irq_latch: 0,
             irq_reload: false,
@@ -62,13 +71,12 @@ impl MMC3 {
     }
 
     fn clock_irq(&mut self) {
-        if self.irq_reload || self.irq_counter == 0 {
+        if self.irq_counter == 0 || self.irq_reload {
             self.irq_counter = self.irq_latch;
             self.irq_reload = false;
         } else {
-            self.irq_counter = self.irq_counter.saturating_sub(1);
+            self.irq_counter -= 1;
         }
-
         if self.irq_counter == 0 && self.irq_enabled {
             self.irq_active = true;
         }
@@ -86,9 +94,7 @@ impl MMC3 {
                     self.regs[6] as usize
                 }
             }
-            1 => {
-                self.regs[7] as usize
-            }
+            1 => self.regs[7] as usize,
             2 => {
                 if self.prg_bank_mode {
                     self.regs[6] as usize
@@ -96,9 +102,7 @@ impl MMC3 {
                     second_last
                 }
             }
-            3 => {
-                last_bank
-            }
+            3 => last_bank,
             _ => 0,
         };
 
@@ -138,15 +142,25 @@ impl MMC3 {
 impl Mapper for MMC3 {
     fn read_ex(&mut self, addr: u16) -> u8 {
         match addr {
-            0x6000..=0x7FFF => self.prg_ram[(addr - 0x6000) as usize],
+            // $6000-$7FFF: WRAM (only if enabled via $A001 bit 7)
+            0x6000..=0x7FFF => {
+                if self.wram_enabled {
+                    self.prg_ram[(addr - 0x6000) as usize]
+                } else {
+                    0
+                }
+            }
             _ => 0,
         }
     }
 
     fn write_ex(&mut self, addr: u16, data: u8) {
         match addr {
+            // $6000-$7FFF: WRAM (only if enabled and not write-protected via $A001)
             0x6000..=0x7FFF => {
-                self.prg_ram[(addr - 0x6000) as usize] = data;
+                if self.wram_enabled && !self.wram_write_protect {
+                    self.prg_ram[(addr - 0x6000) as usize] = data;
+                }
             }
             _ => {}
         }
@@ -180,11 +194,20 @@ impl Mapper for MMC3 {
             }
             0xA000..=0xBFFF => {
                 if (addr & 1) == 0 {
-                    self.mirroring = if (data & 0x01) == 0 {
-                        Mirroring::Vertical
-                    } else {
-                        Mirroring::Horizontal
-                    };
+                    // $A000: mirroring — ignored when 4-screen (hardwired on TR1ROM/TVROM)
+                    if !self.four_screen {
+                        self.mirroring = if (data & 0x01) == 0 {
+                            Mirroring::Vertical
+                        } else {
+                            Mirroring::Horizontal
+                        };
+                    }
+                } else {
+                    // $A001: WRAM enable / write-protect
+                    // Bit 7 (E): 0 = WRAM disabled, 1 = enabled
+                    // Bit 6 (W): 0 = writable, 1 = write-protected
+                    self.wram_enabled = (data & 0x80) != 0;
+                    self.wram_write_protect = (data & 0x40) != 0;
                 }
             }
             0xC000..=0xDFFF => {
@@ -248,14 +271,16 @@ impl Mapper for MMC3 {
             return;
         }
         let a12 = (addr & 0x1000) != 0;
-        if a12 && !self.prev_a12 && self.a12_low_streak >= 3 {
-            self.clock_irq();
-        }
-        if !a12 {
-            self.a12_low_streak = self.a12_low_streak.saturating_add(1);
-        } else {
+
+        if a12 {
+            if !self.prev_a12 && self.a12_low_streak >= 3 {
+                self.clock_irq();
+            }
             self.a12_low_streak = 0;
+        } else {
+            self.a12_low_streak = self.a12_low_streak.saturating_add(1);
         }
+
         self.prev_a12 = a12;
     }
 }

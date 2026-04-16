@@ -207,13 +207,18 @@ pub struct APU {
     pub volume_triangle: f32,
     pub volume_noise: f32,
     pub volume_dmc: f32,
+
+    // Resampling accumulation
+    sample_accumulator: f32,
+    sample_count: u32,
+    last_sample: f32,
 }
 
 impl APU {
     fn make_filters(sample_rate: f32) -> [AudioFilter; 3] {
         [
             AudioFilter::high_pass(sample_rate, 90.0),
-            AudioFilter::high_pass(sample_rate, 440.0),
+            AudioFilter::high_pass(sample_rate, 20.0),
             AudioFilter::low_pass(sample_rate, 14_000.0),
         ]
     }
@@ -235,6 +240,9 @@ impl APU {
             volume_triangle: 1.0,
             volume_noise: 1.0,
             volume_dmc: 1.0,
+            sample_accumulator: 0.0,
+            sample_count: 0,
+            last_sample: 0.0,
         }
     }
 
@@ -391,6 +399,10 @@ impl APU {
             self.dmc.step_timer();
         }
 
+        // Accumulate raw sample for downsampling
+        self.sample_accumulator += self.get_raw_sample();
+        self.sample_count += 1;
+
         // Apply frame counter signals
         let (qf, hf, _irq) = fc;
         if qf {
@@ -410,7 +422,7 @@ impl APU {
     }
 
     #[inline(always)]
-    pub fn output_sample(&mut self) -> f32 {
+    fn get_raw_sample(&self) -> f32 {
         let p1 = self.pulse1.output() as f32 * self.volume_pulse1;
         let p2 = self.pulse2.output() as f32 * self.volume_pulse2;
         let t = self.triangle.output() as f32 * self.volume_triangle;
@@ -432,14 +444,30 @@ impl APU {
             0.0
         };
 
-        // Raw output in [0, ~1]
-        let mut out = (pulse_out + tnd_out) * self.volume_master;
+        (pulse_out + tnd_out) * self.volume_master
+    }
+
+    #[inline(always)]
+    pub fn output_sample(&mut self) -> f32 {
+        if self.sample_count == 0 {
+            return self.last_sample;
+        }
+
+        let mut out = self.sample_accumulator / self.sample_count as f32;
+        self.sample_accumulator = 0.0;
+        self.sample_count = 0;
 
         // Apply filters (unrolled loop)
         out = self.filters[0].tick(out);
         out = self.filters[1].tick(out);
         out = self.filters[2].tick(out);
+
+        self.last_sample = out;
         out
+    }
+
+    fn last_filtered_sample(&self) -> f32 {
+        self.last_sample
     }
 
     pub fn take_dmc_cpu_stall_cycles(&mut self) -> u64 {

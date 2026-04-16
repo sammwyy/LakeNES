@@ -172,6 +172,10 @@ pub struct PPU {
     sprite_zero_on_scanline: bool,
     /// Set by `evaluate_sprites` for line `scanline + 1`; latched into `sprite_zero_on_scanline` on scanline advance.
     sprite_zero_pending: bool,
+    /// Slot index in `scanline_sprites` / sprite shifters where sprite 0 is stored (current scanline).
+    sprite_zero_slot: Option<usize>,
+    /// Pending slot for next scanline, latched from `evaluate_sprites`.
+    sprite_zero_slot_pending: Option<usize>,
 
     // Legacy / Debug compatibility
     pub scroll_x: u8,
@@ -283,6 +287,8 @@ impl PPU {
             sprite_shifter_pattern_hi: [0; 8],
             sprite_zero_on_scanline: false,
             sprite_zero_pending: false,
+            sprite_zero_slot: None,
+            sprite_zero_slot_pending: None,
             scroll_x: 0,
             scroll_y: 0,
             odd_frame: false,
@@ -297,9 +303,17 @@ impl PPU {
 
     // $2000 PPUCTRL
     fn write_ctrl(&mut self, value: u8) {
+        let old_enable_nmi = self.ctrl.contains(Control::ENABLE_NMI);
         self.ctrl = Control::from_bits_truncate(value);
         self.t_ram.set_nametable_x((value >> 0) & 1);
         self.t_ram.set_nametable_y((value >> 1) & 1);
+        // When NMI-enable transitions 0→1 while VBlank is already set, NMI fires immediately.
+        if !old_enable_nmi
+            && self.ctrl.contains(Control::ENABLE_NMI)
+            && self.status.contains(Status::VBLANK)
+        {
+            self.nmi_interrupt = true;
+        }
     }
 
     // $2001 PPUMASK
@@ -599,6 +613,7 @@ impl PPU {
             } else if self.scanline >= 0 && self.scanline < 240 {
                 // Sprites for this line were determined at dot 256 of the previous line.
                 self.sprite_zero_on_scanline = self.sprite_zero_pending;
+                self.sprite_zero_slot = self.sprite_zero_slot_pending;
             }
         }
 
@@ -685,60 +700,6 @@ impl PPU {
             };
     }
 
-    /// Pattern pixel (0 = transparent) for OAM entry 0 only at framebuffer X `x` on current `scanline`.
-    fn sprite_zero_pattern_pixel_at(&self, x: i16, mapper: &mut dyn Mapper) -> u8 {
-        let y = self.oam_data[0] as i16;
-        let tile_idx = self.oam_data[1];
-        let attr = self.oam_data[2];
-        let spr_x = self.oam_data[3] as i16;
-        let px = x - spr_x;
-        if px < 0 || px > 7 {
-            return 0;
-        }
-        let sprite_height = if self.ctrl.contains(Control::SPRITE_SIZE) {
-            16
-        } else {
-            8
-        };
-        let mut row = self.scanline - y - 1;
-        if row < 0 || row >= sprite_height {
-            return 0;
-        }
-        if (attr & 0x80) != 0 {
-            row = sprite_height - 1 - row;
-        }
-
-        let (tile_addr_lo, tile_addr_hi) = if sprite_height == 8 {
-            let table = if self.ctrl.contains(Control::SPRITE_PATTERN) {
-                0x1000
-            } else {
-                0x0000
-            };
-            let lo = table | (tile_idx as u16) << 4 | row as u16;
-            (lo, lo + 8)
-        } else {
-            let table = ((tile_idx & 1) as u16) * 0x1000;
-            let idx = tile_idx & 0xFE;
-            let lo = if row < 8 {
-                table | (idx as u16) << 4 | row as u16
-            } else {
-                table | ((idx + 1) as u16) << 4 | (row as u16 - 8)
-            };
-            (lo, lo + 8)
-        };
-
-        let mut pat_lo = self.ppu_read(tile_addr_lo, mapper);
-        let mut pat_hi = self.ppu_read(tile_addr_hi, mapper);
-        if (attr & 0x40) != 0 {
-            pat_lo = pat_lo.reverse_bits();
-            pat_hi = pat_hi.reverse_bits();
-        }
-        let bit_mux = 7 - px;
-        let p0 = (pat_lo >> bit_mux) & 1;
-        let p1 = (pat_hi >> bit_mux) & 1;
-        (p1 << 1) | p0
-    }
-
     fn update_shifters(&mut self) {
         if self.mask.contains(Mask::RENDER_BACKGROUND) {
             self.bg_shifter_pattern_lo <<= 1;
@@ -774,21 +735,30 @@ impl PPU {
             bg_palette = (pal1 as u8) << 1 | (pal0 as u8);
         }
 
-        // Sprite 0 hit compares OAM entry 0's pattern against the background, independent
-        // of sprite priority or which sprite wins the foreground mux.
+        // Sprite 0 hit: use the pre-fetched pattern data from the sprite shifters so we never
+        // re-read CHR ROM mid-scanline (which would cause spurious A12 toggles on MMC3).
         if self.sprite_zero_on_scanline
             && (self.mask_bits() & 0x08) != 0
             && (self.mask_bits() & 0x10) != 0
             && bg_pixel != 0
         {
-            let s0 = self.sprite_zero_pattern_pixel_at(self.cycle - 1, mapper);
-            if s0 != 0 {
-                let x = self.cycle - 1;
-                if x != 255 {
-                    let show_left_bg = (self.mask_bits() & 0x02) != 0;
-                    let show_left_sp = (self.mask_bits() & 0x04) != 0;
-                    if x >= 8 || (show_left_bg && show_left_sp) {
-                        self.status.insert(Status::SPRITE_ZHIT);
+            let x = self.cycle - 1;
+            if x != 255 {
+                if let Some(slot) = self.sprite_zero_slot {
+                    if slot < self.scanline_sprites.len() {
+                        let sprite_x = self.secondary_oam[slot * 4 + 3] as i16;
+                        if x >= sprite_x && x < sprite_x + 8 {
+                            let p0 = (self.sprite_shifter_pattern_lo[slot] & 0x80) != 0;
+                            let p1 = (self.sprite_shifter_pattern_hi[slot] & 0x80) != 0;
+                            if (p1 as u8) << 1 | (p0 as u8) != 0 {
+                                let show_left_bg = (self.mask_bits() & 0x02) != 0;
+                                let show_left_sp = (self.mask_bits() & 0x04) != 0;
+                                let left_clip_ok = x >= 8 || (show_left_bg && show_left_sp);
+                                if left_clip_ok {
+                                    self.status.insert(Status::SPRITE_ZHIT);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -801,7 +771,7 @@ impl PPU {
         if (self.mask_bits() & 0x10) != 0 {
             for i in 0..self.scanline_sprites.len() {
                 let oam_idx = self.scanline_sprites[i] as usize;
-                let sprite_x = self.oam_data[oam_idx * 4 + 3];
+                let sprite_x = self.secondary_oam[i * 4 + 3];
 
                 // Only process sprites that have started (fine-grained shift counter
                 // already handles the actual pixel output via shifters).
@@ -871,6 +841,7 @@ impl PPU {
 
         let mut found = 0usize;
         self.sprite_zero_pending = false;
+        self.sprite_zero_slot_pending = None;
 
         for i in 0..64 {
             let y = self.oam_data[i * 4] as i16;
@@ -885,6 +856,7 @@ impl PPU {
                     self.scanline_sprites.push(i as u8);
                     if i == 0 {
                         self.sprite_zero_pending = true;
+                        self.sprite_zero_slot_pending = Some(found);
                     }
                     found += 1;
                 } else {
@@ -896,58 +868,62 @@ impl PPU {
     }
 
     fn fetch_next_sprite_pattern(&mut self, mapper: &mut dyn Mapper) {
-        if self.sprite_fetch_index >= self.scanline_sprites.len() || self.sprite_fetch_index >= 8 {
-            return;
-        }
-
-        let oam_idx = self.scanline_sprites[self.sprite_fetch_index] as usize;
-        let target_line = self.scanline + 1;
-        let y = self.oam_data[oam_idx * 4] as i16;
-        let attr = self.oam_data[oam_idx * 4 + 2];
-        let tile_idx = self.oam_data[oam_idx * 4 + 1];
-        let sprite_height = if self.ctrl.contains(Control::SPRITE_SIZE) {
-            16
+        let is_8x16 = self.ctrl.contains(Control::SPRITE_SIZE);
+        let sprite_height = if is_8x16 { 16 } else { 8 };
+        let table_8x8 = if self.ctrl.contains(Control::SPRITE_PATTERN) {
+            0x1000
         } else {
-            8
+            0x0000
         };
 
-        let mut row = target_line - y - 1;
-        if row < 0 || row >= sprite_height {
-            self.sprite_fetch_index += 1;
-            return;
-        }
-        if (attr & 0x80) != 0 {
-            row = sprite_height - 1 - row;
-        }
+        if self.sprite_fetch_index < self.scanline_sprites.len() && self.sprite_fetch_index < 8 {
+            let oam_idx = self.scanline_sprites[self.sprite_fetch_index] as usize;
+            let target_line = self.scanline + 1;
+            let y = self.oam_data[oam_idx * 4] as i16;
+            let attr = self.oam_data[oam_idx * 4 + 2];
+            let tile_idx = self.oam_data[oam_idx * 4 + 1];
 
-        let (tile_addr_lo, tile_addr_hi) = if sprite_height == 8 {
-            let table = if self.ctrl.contains(Control::SPRITE_PATTERN) {
-                0x1000
+            let mut row = target_line - y - 1;
+            if row < 0 || row >= sprite_height {
+                self.sprite_fetch_index += 1;
+                return;
+            }
+            if (attr & 0x80) != 0 {
+                row = sprite_height - 1 - row;
+            }
+
+            let (tile_addr_lo, tile_addr_hi) = if !is_8x16 {
+                let lo = table_8x8 | (tile_idx as u16) << 4 | row as u16;
+                (lo, lo + 8)
             } else {
-                0x0000
+                let table = ((tile_idx & 1) as u16) * 0x1000;
+                let idx = tile_idx & 0xFE;
+                let lo = if row < 8 {
+                    table | (idx as u16) << 4 | row as u16
+                } else {
+                    table | ((idx + 1) as u16) << 4 | (row as u16 - 8)
+                };
+                (lo, lo + 8)
             };
-            let lo = table | (tile_idx as u16) << 4 | row as u16;
-            (lo, lo + 8)
-        } else {
-            let table = ((tile_idx & 1) as u16) * 0x1000;
-            let idx = tile_idx & 0xFE;
-            let lo = if row < 8 {
-                table | (idx as u16) << 4 | row as u16
-            } else {
-                table | ((idx + 1) as u16) << 4 | (row as u16 - 8)
-            };
-            (lo, lo + 8)
-        };
 
-        let mut pat_lo = self.ppu_read(tile_addr_lo, mapper);
-        let mut pat_hi = self.ppu_read(tile_addr_hi, mapper);
-        if (attr & 0x40) != 0 {
-            pat_lo = pat_lo.reverse_bits();
-            pat_hi = pat_hi.reverse_bits();
+            let mut pat_lo = self.ppu_read(tile_addr_lo, mapper);
+            let mut pat_hi = self.ppu_read(tile_addr_hi, mapper);
+            if (attr & 0x40) != 0 {
+                pat_lo = pat_lo.reverse_bits();
+                pat_hi = pat_hi.reverse_bits();
+            }
+
+            self.sprite_shifter_pattern_lo[self.sprite_fetch_index] = pat_lo;
+            self.sprite_shifter_pattern_hi[self.sprite_fetch_index] = pat_hi;
+        } else if self.sprite_fetch_index < 8 {
+            // Dummy fetch for MMC3 scanline counting.
+            // When no sprite is being fetched, hardware still performs fetches (usually from the table
+            // selected for sprites).
+            let addr = table_8x8 | 0x0FF0; // Dummy read at the end of the pattern table
+            self.ppu_read(addr, mapper);
+            self.ppu_read(addr + 8, mapper);
         }
 
-        self.sprite_shifter_pattern_lo[self.sprite_fetch_index] = pat_lo;
-        self.sprite_shifter_pattern_hi[self.sprite_fetch_index] = pat_hi;
         self.sprite_fetch_index += 1;
     }
 

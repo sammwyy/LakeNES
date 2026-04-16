@@ -52,7 +52,7 @@ fn main() {
     let sample_rate = config.sample_rate() as f64;
     let channels = config.channels() as usize;
 
-    let ring = HeapRb::<f32>::new(8192); // Ring buffer for audio samples
+    let ring = HeapRb::<f32>::new(32768); // Larger ring buffer for smoother audio
     let (mut producer, mut consumer) = ring.split();
 
     let stream = device
@@ -74,13 +74,10 @@ fn main() {
     stream.play().expect("Failed to start audio stream");
 
     if let Some(ref mut nes_instance) = nes {
-        nes_instance.set_apu_volumes(200.0, 100.0, 100.0, 100.0, 100.0, 100.0);
+        nes_instance.set_audio_sample_rate(sample_rate);
+        nes_instance.set_apu_volumes(100.0, 100.0, 100.0, 100.0, 100.0, 100.0);
     }
 
-    // Pre-calculate samples per cycle
-    let cpu_frequency = 1789772.7272; // NTSC CPU Frequency
-    let samples_per_cycle: f64 = sample_rate / cpu_frequency;
-    let mut sample_accumulator = 0.0;
     let empty_buffer = vec![0u32; 256 * 240];
     let mut next_frame_deadline = Instant::now();
 
@@ -97,7 +94,8 @@ fn main() {
                     Ok(data) => {
                         nes = Some(NES::new(&data));
                         if let Some(ref mut nes_instance) = nes {
-                            nes_instance.set_apu_volumes(200.0, 100.0, 100.0, 100.0, 100.0, 100.0);
+                            nes_instance.set_audio_sample_rate(sample_rate);
+                            nes_instance.set_apu_volumes(100.0, 100.0, 100.0, 100.0, 100.0, 100.0);
                         }
                         log::info!("Loaded ROM: {:?}", path);
                     }
@@ -151,25 +149,25 @@ fn main() {
             // However, we can use 'nes_instance.bus' components.
 
             while cycles_this_frame < 29780 {
+                // If audio buffer is getting too full, stall the emulation to sync with host audio rate.
+                // This prevents dropping samples and the resulting "echo/jitter".
+                if producer.occupied_len() > 16384 {
+                    std::thread::sleep(Duration::from_millis(1));
+                    continue;
+                }
+
                 let cpu_cycles = nes_instance.step_cycle();
                 cycles_this_frame += cpu_cycles;
 
-                for _ in 0..cpu_cycles {
-                    sample_accumulator += samples_per_cycle;
-                    if sample_accumulator >= 1.0 {
-                        sample_accumulator -= 1.0;
-                        let sample = nes_instance.get_audio_sample();
-                        if producer.vacant_len() > 0 {
-                            let _ = producer.try_push(sample);
-                        }
-                    }
+                // Pump all generated samples to the output stream
+                while nes_instance.audio_buffer_len() > 0 {
+                    let sample = nes_instance.get_audio_sample();
+                    let _ = producer.try_push(sample);
                 }
             }
 
-            // Keep a small refill burst to reduce underflow clicks when the
-            // emulation and audio callback cadence diverge.
-            let target_fill = 2048usize;
-            while producer.vacant_len() > 0 && producer.occupied_len() < target_fill {
+            // Fill any remainder to avoid underflow
+            while producer.vacant_len() > 0 && nes_instance.audio_buffer_len() > 0 {
                 let _ = producer.try_push(nes_instance.get_audio_sample());
             }
 
