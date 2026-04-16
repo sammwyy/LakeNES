@@ -1,7 +1,7 @@
 use super::{Mapper, Mirroring};
 use alloc::vec::Vec;
 
-pub struct Mapper0 {
+pub struct NROM {
     prg_rom: Vec<u8>,
     chr_rom: Vec<u8>,
     prg_banks: usize,
@@ -9,7 +9,7 @@ pub struct Mapper0 {
     mirroring: Mirroring,
 }
 
-impl Mapper0 {
+impl NROM {
     pub fn new(
         prg_rom: Vec<u8>,
         chr_rom: Vec<u8>,
@@ -27,7 +27,7 @@ impl Mapper0 {
     }
 }
 
-impl Mapper for Mapper0 {
+impl Mapper for NROM {
     fn read_prg(&mut self, addr: u16) -> u8 {
         if addr >= 0x8000 {
             let mut idx = addr as usize - 0x8000;
@@ -42,7 +42,7 @@ impl Mapper for Mapper0 {
     }
 
     fn write_prg(&mut self, _addr: u16, _data: u8) {
-        // Mapper 0 has no registers
+        // NROM has no registers
     }
 
     fn read_chr(&mut self, addr: u16) -> u8 {
@@ -53,12 +53,6 @@ impl Mapper for Mapper0 {
     }
 
     fn write_chr(&mut self, addr: u16, data: u8) {
-        // If CHR is RAM (0 banks usually means we allocated RAM in ROM loader? Or handled here?)
-        // Standard NROM with CHR-RAM allows writing.
-        // We need to know if it's RAM.
-        // Usually, if chr_banks == 0 (from header) it implies RAM.
-        // But here we received a Vec. If it is mutable/RAM, we should allow write.
-        // For simplicity, if we have space, write it.
         if (addr as usize) < self.chr_rom.len() {
             self.chr_rom[addr as usize] = data;
         }

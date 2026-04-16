@@ -1,7 +1,7 @@
 use super::{Mapper, Mirroring};
 use alloc::vec::Vec;
 
-pub struct Mapper3 {
+pub struct CNROM {
     prg_rom: Vec<u8>,
     chr: Vec<u8>,
     chr_bank: usize,
@@ -10,7 +10,7 @@ pub struct Mapper3 {
     mirroring: Mirroring,
 }
 
-impl Mapper3 {
+impl CNROM {
     pub fn new(prg_rom: Vec<u8>, chr: Vec<u8>, prg_banks: usize, chr_is_ram: bool, mirroring: Mirroring) -> Self {
         Self {
             prg_rom,
@@ -23,7 +23,7 @@ impl Mapper3 {
     }
 }
 
-impl Mapper for Mapper3 {
+impl Mapper for CNROM {
     fn read_prg(&mut self, addr: u16) -> u8 {
         if addr < 0x8000 {
             return 0;

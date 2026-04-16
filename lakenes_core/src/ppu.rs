@@ -219,6 +219,11 @@ impl PPU {
             Mirroring::Vertical => addr & 0x07FF,
             Mirroring::OneScreenLow => addr & 0x03FF,
             Mirroring::OneScreenHigh => (addr & 0x03FF) + 0x400,
+            // Four-screen: each nametable is independent (needs 4KB VRAM).
+            // The cart provides the extra RAM; within our 2KB buffer we wrap to
+            // avoid panics.  Mappers that truly use four-screen should override
+            // read_ppu/write_ppu with their own RAM.
+            Mirroring::FourScreen => addr & 0x07FF,
         };
         mirrored as usize
     }
@@ -404,6 +409,11 @@ impl PPU {
     fn ppu_write(&mut self, addr: u16, value: u8, mapper: &mut dyn Mapper) {
         let addr = addr & 0x3FFF;
         mapper.ppu_bus_address(addr);
+
+        if mapper.write_ppu(addr, value, &mut self.vram) {
+            return;
+        }
+
         match addr {
             0x0000..=0x1FFF => {
                 mapper.write_chr(addr, value);
@@ -422,6 +432,11 @@ impl PPU {
     fn ppu_read(&self, addr: u16, mapper: &mut dyn Mapper) -> u8 {
         let addr = addr & 0x3FFF;
         mapper.ppu_bus_address(addr);
+
+        if let Some(val) = mapper.read_ppu(addr, &self.vram) {
+            return val;
+        }
+
         match addr {
             0x0000..=0x1FFF => mapper.read_chr(addr),
             0x2000..=0x3EFF => {

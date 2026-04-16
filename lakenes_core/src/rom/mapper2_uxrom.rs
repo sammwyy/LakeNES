@@ -1,7 +1,7 @@
 use super::{Mapper, Mirroring};
 use alloc::vec::Vec;
 
-pub struct Mapper2 {
+pub struct UxROM {
     prg_rom: Vec<u8>,
     chr_rom: Vec<u8>,
     prg_banks: usize,
@@ -10,7 +10,7 @@ pub struct Mapper2 {
     mirroring: Mirroring,
 }
 
-impl Mapper2 {
+impl UxROM {
     pub fn new(prg_rom: Vec<u8>, chr_rom: Vec<u8>, prg_banks: usize, mirroring: Mirroring) -> Self {
         let last_bank_offset = (prg_banks.saturating_sub(1)) * 16384;
         Self {
@@ -24,7 +24,7 @@ impl Mapper2 {
     }
 }
 
-impl Mapper for Mapper2 {
+impl Mapper for UxROM {
     fn read_prg(&mut self, addr: u16) -> u8 {
         if addr >= 0x8000 {
             if addr < 0xC000 {

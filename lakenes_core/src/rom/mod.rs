@@ -1,18 +1,28 @@
 use alloc::boxed::Box;
 
-pub mod mapper0;
-pub mod mapper1;
-pub mod mapper2;
-pub mod mapper3;
-pub mod mapper4;
-pub mod mapper7;
+pub mod mapper0_nrom;
+pub mod mapper10_mmc4;
+pub mod mapper178_nj0430;
+pub mod mapper1_mmc1;
+pub mod mapper2_uxrom;
+pub mod mapper228_action52;
+pub mod mapper3_cnrom;
+pub mod mapper4_mmc3;
+pub mod mapper5_mmc5;
+pub mod mapper7_axrom;
+pub mod mapper9_mmc2;
 
-use mapper0::Mapper0;
-use mapper1::Mapper1;
-use mapper2::Mapper2;
-use mapper3::Mapper3;
-use mapper4::Mapper4;
-use mapper7::Mapper7;
+use mapper0_nrom::NROM;
+use mapper1_mmc1::MMC1;
+use mapper2_uxrom::UxROM;
+use mapper228_action52::Mapper228;
+use mapper3_cnrom::CNROM;
+use mapper4_mmc3::MMC3;
+use mapper5_mmc5::MMC5;
+use mapper7_axrom::AxROM;
+use mapper9_mmc2::MMC2;
+use mapper10_mmc4::MMC4;
+use mapper178_nj0430::NJ0430;
 
 const NES_HEADER_SIZE: usize = 16;
 const PRG_ROM_BANK_SIZE: usize = 16384;
@@ -24,6 +34,16 @@ pub enum Mirroring {
     Vertical,
     OneScreenLow,
     OneScreenHigh,
+    FourScreen,
+}
+
+/// TV system / timing mode parsed from the iNES/NES 2.0 header.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TimingMode {
+    Ntsc,
+    Pal,
+    Multi,
+    Dendy,
 }
 
 #[derive(Debug)]
@@ -46,13 +66,25 @@ pub trait Mapper {
     fn mirroring(&self) -> Mirroring {
         Mirroring::Vertical
     }
+    /// Allows the mapper to override PPU memory access (e.g. MMC5 nametable mapping).
+    /// If it returns Some(data), the PPU will use that instead of its internal VRAM.
+    fn read_ppu(&mut self, _addr: u16, _vram: &[u8]) -> Option<u8> {
+        None
+    }
+    /// Allows the mapper to handle PPU memory writes.
+    /// If it returns true, the PPU will skip its internal VRAM write.
+    fn write_ppu(&mut self, _addr: u16, _data: u8, _vram: &mut [u8]) -> bool {
+        false
+    }
+    fn reset(&mut self) {}
 }
 
 pub struct ROM {
     pub mapper: Box<dyn Mapper>,
-    pub mapper_id: u8,
+    pub mapper_id: u16,
     pub prg_size: usize,
     pub chr_size: usize,
+    pub timing: TimingMode,
 }
 
 impl ROM {
@@ -67,22 +99,75 @@ impl ROM {
             return Err(ROMError::InvalidHeader);
         }
 
-        let prg_banks = header[4] as usize;
-        let chr_banks = header[5] as usize;
-        let mapper_id = (header[7] & 0xF0) | (header[6] >> 4);
+        // Detect NES 2.0: bits 2-3 of byte 7 == 0b10
+        let is_nes2 = (header[7] & 0x0C) == 0x08;
 
-        let mirroring_mode = if (header[6] & 0x01) != 0 {
+        // --- Mapper ID ---
+        // iNES 1.0: 8-bit mapper from bytes 6+7
+        // NES 2.0:  12-bit mapper from bytes 6+7+8
+        let mapper_lo = ((header[7] & 0xF0) | (header[6] >> 4)) as u16;
+        let mapper_id = if is_nes2 {
+            mapper_lo | ((header[8] as u16 & 0x0F) << 8)
+        } else {
+            mapper_lo
+        };
+
+        let submapper = if is_nes2 { header[8] >> 4 } else { 0 };
+
+        // --- PRG/CHR bank counts ---
+        let prg_banks = if is_nes2 {
+            // NES 2.0: byte 9 bits 0-3 are the MSB of PRG-ROM size
+            header[4] as usize | ((header[9] as usize & 0x0F) << 8)
+        } else {
+            header[4] as usize
+        };
+
+        let chr_banks = if is_nes2 {
+            // NES 2.0: byte 9 bits 4-7 are the MSB of CHR-ROM size
+            header[5] as usize | ((header[9] as usize & 0xF0) << 4)
+        } else {
+            header[5] as usize
+        };
+
+        // --- Mirroring ---
+        // Bit 3 of byte 6: four-screen VRAM (overrides bit 0)
+        let four_screen = (header[6] & 0x08) != 0;
+        let mirroring_mode = if four_screen {
+            Mirroring::FourScreen
+        } else if (header[6] & 0x01) != 0 {
             Mirroring::Vertical
         } else {
             Mirroring::Horizontal
         };
 
-        let mut offset = NES_HEADER_SIZE;
+        // --- Timing mode ---
+        let timing = if is_nes2 {
+            match header[12] & 0x03 {
+                0 => TimingMode::Ntsc,
+                1 => TimingMode::Pal,
+                2 => TimingMode::Multi,
+                3 => TimingMode::Dendy,
+                _ => TimingMode::Ntsc,
+            }
+        } else {
+            // iNES 1.0: byte 9 bit 0
+            if (header[9] & 0x01) != 0 {
+                TimingMode::Pal
+            } else {
+                TimingMode::Ntsc
+            }
+        };
 
+        // --- Battery / PRG-RAM flags (informational) ---
+        let _has_battery = (header[6] & 0x02) != 0;
+
+        // --- Trainer ---
+        let mut offset = NES_HEADER_SIZE;
         if header[6] & 0x04 != 0 {
             offset += 512; // Trainer
         }
 
+        // --- PRG ROM ---
         let prg_size = prg_banks * PRG_ROM_BANK_SIZE;
         if bytes.len() < offset + prg_size {
             return Err(ROMError::IncompleteData);
@@ -90,6 +175,7 @@ impl ROM {
         let prg_rom = bytes[offset..offset + prg_size].to_vec();
         offset += prg_size;
 
+        // --- CHR ROM ---
         let chr_size_on_disk = if chr_banks == 0 {
             CHR_ROM_BANK_SIZE
         } else {
@@ -108,36 +194,49 @@ impl ROM {
 
         log::info!("PRG ROM: {} banks ({} bytes)", prg_banks, prg_rom.len());
         log::info!("CHR ROM: {} banks ({} bytes)", chr_banks, chr_rom.len());
-        log::info!("Mapper ID: {}", mapper_id);
+        log::info!(
+            "Mapper ID: {} (NES{}{})",
+            mapper_id,
+            if is_nes2 { " 2.0" } else { "" },
+            if submapper != 0 {
+                alloc::format!(", submapper {}", submapper)
+            } else {
+                alloc::string::String::new()
+            }
+        );
+        log::info!("Mirroring: {:?}", mirroring_mode);
+        log::info!("Timing: {:?}", timing);
 
         let prg_len = prg_rom.len();
         let chr_len = chr_rom.len();
 
         let mapper: Box<dyn Mapper> = match mapper_id {
-            0 => Box::new(Mapper0::new(
+            0 => Box::new(NROM::new(
                 prg_rom,
                 chr_rom,
                 prg_banks,
                 chr_banks,
                 mirroring_mode,
             )),
-            1 => Box::new(Mapper1::new(prg_rom, chr_rom)),
-            2 => Box::new(Mapper2::new(prg_rom, chr_rom, prg_banks, mirroring_mode)),
-            3 => Box::new(Mapper3::new(
+            1 => Box::new(MMC1::new(prg_rom, chr_rom)),
+            2 => Box::new(UxROM::new(prg_rom, chr_rom, prg_banks, mirroring_mode)),
+            3 => Box::new(CNROM::new(
                 prg_rom,
                 chr_rom,
                 prg_banks,
                 chr_banks == 0,
                 mirroring_mode,
             )),
-            4 => Box::new(Mapper4::new(prg_rom, chr_rom)),
-            7 => Box::new(Mapper7::new(prg_rom, chr_rom)),
+            4 => Box::new(MMC3::new(prg_rom, chr_rom, mirroring_mode)),
+            5 => Box::new(MMC5::new(prg_rom, chr_rom)),
+            7 => Box::new(AxROM::new(prg_rom, chr_rom)),
+            9 => Box::new(MMC2::new(prg_rom, chr_rom, mirroring_mode)),
+            10 => Box::new(MMC4::new(prg_rom, chr_rom, mirroring_mode)),
+            228 => Box::new(Mapper228::new(prg_rom, chr_rom)),
+            178 => Box::new(NJ0430::new(prg_rom, submapper)),
             _ => {
-                log::warn!(
-                    "Mapper {} not implemented, falling back to Mapper 0",
-                    mapper_id
-                );
-                Box::new(Mapper0::new(
+                log::warn!("Mapper {} not implemented, falling back to NROM", mapper_id);
+                Box::new(NROM::new(
                     prg_rom,
                     chr_rom,
                     prg_banks,
@@ -149,9 +248,10 @@ impl ROM {
 
         Ok(Self {
             mapper,
-            mapper_id,
+            mapper_id: mapper_id,
             prg_size: prg_len,
             chr_size: chr_len,
+            timing,
         })
     }
 }

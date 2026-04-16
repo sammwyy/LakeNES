@@ -10,8 +10,8 @@ pub mod memory;
 pub mod ppu;
 pub mod rom;
 
-use apu::APU;
 use alloc::collections::VecDeque;
+use apu::APU;
 use bus::Bus;
 use cpu::CPU;
 use joypad::Joypad;
@@ -66,7 +66,7 @@ impl NES {
             total_cycles: 0,
             paused: false,
         }
-}
+    }
 
     /// Set emulation speed for real-time pacing. `100` = normal, `200` = double, `50` = half, etc.
     pub fn set_speed(&mut self, percent: u32) {
@@ -98,6 +98,28 @@ impl NES {
         if let Some(ref mut apu) = self.bus.apu {
             apu.set_volumes(master, pulse1, pulse2, triangle, noise, dmc);
         }
+    }
+
+    pub fn soft_reset(&mut self) {
+        self.bus.reset(false);
+        self.cpu.reset(&mut self.bus);
+        self.master_cpu_cycles = 0;
+        self.master_ppu_cycles = 0;
+        self.master_apu_cycles = 0;
+        self.total_cycles = 0;
+        log::info!("Performed soft reset");
+    }
+
+    pub fn hard_reset(&mut self) {
+        self.bus.reset(true);
+        self.cpu = CPU::new();
+        self.cpu.reset(&mut self.bus);
+        self.master_cpu_cycles = 0;
+        self.master_ppu_cycles = 0;
+        self.master_apu_cycles = 0;
+        self.total_cycles = 0;
+        self.total_frames = 0;
+        log::info!("Performed hard reset");
     }
 
     pub fn step_cycle(&mut self) -> u64 {
@@ -202,7 +224,7 @@ impl NES {
         }
     }
 
-    pub fn get_rom_mapper_id(&self) -> u8 {
+    pub fn get_rom_mapper_id(&self) -> u16 {
         self.bus.rom.as_ref().map(|r| r.mapper_id).unwrap_or(0)
     }
 
@@ -216,11 +238,11 @@ impl NES {
 
     pub fn get_prg_rom(&mut self) -> alloc::vec::Vec<u8> {
         if self.bus.rom.is_some() {
-             let mut data = alloc::vec![0u8; 0x10000];
-             for addr in 0x8000..=0xFFFF {
-                 data[addr as usize - 0x8000] = self.bus.read(addr);
-             }
-             data
+            let mut data = alloc::vec![0u8; 0x10000];
+            for addr in 0x8000..=0xFFFF {
+                data[addr as usize - 0x8000] = self.bus.read(addr);
+            }
+            data
         } else {
             alloc::vec![]
         }
@@ -246,7 +268,11 @@ impl NES {
     }
 
     pub fn get_ppu_oam(&self) -> [u8; 256] {
-        self.bus.ppu.as_ref().map(|p| p.oam_data).unwrap_or([0; 256])
+        self.bus
+            .ppu
+            .as_ref()
+            .map(|p| p.oam_data)
+            .unwrap_or([0; 256])
     }
 
     pub fn get_pattern_table(&mut self, table_idx: u8) -> alloc::vec::Vec<u8> {
@@ -257,16 +283,16 @@ impl NES {
                     let tile_idx = tile_y * 16 + tile_x;
                     let table_addr = (table_idx as u16) * 0x1000;
                     let tile_addr = table_addr + (tile_idx as u16) * 16;
-                    
+
                     for row in 0..8 {
                         let lo = ppu.ppu_read_debug(tile_addr + row as u16, &mut *rom.mapper);
                         let hi = ppu.ppu_read_debug(tile_addr + row as u16 + 8, &mut *rom.mapper);
-                        
+
                         for col in 0..8 {
                             let bit0 = (lo >> (7 - col)) & 1;
                             let bit1 = (hi >> (7 - col)) & 1;
                             let color_idx = (bit1 << 1) | bit0;
-                            
+
                             let x = tile_x * 8 + col;
                             let y = tile_y * 8 + row;
                             pixels[y * 128 + x] = color_idx;
@@ -281,19 +307,26 @@ impl NES {
     pub fn get_apu_channels_state(&self) -> alloc::vec::Vec<f32> {
         let mut states = alloc::vec![0.0f32; 6]; // P1, P2, Tri, Noise, DMC, Master
         if let Some(ref apu) = self.bus.apu {
-             states[0] = apu.pulse1.output() as f32 / 15.0;
-             states[1] = apu.pulse2.output() as f32 / 15.0;
-             states[2] = apu.triangle.output() as f32 / 15.0;
-             states[3] = apu.noise.output() as f32 / 15.0;
-             states[4] = apu.dmc.output_level as f32 / 127.0;
-             // Approximate master level from last output
-             states[5] = self.last_audio_sample.abs();
+            states[0] = apu.pulse1.output() as f32 / 15.0;
+            states[1] = apu.pulse2.output() as f32 / 15.0;
+            states[2] = apu.triangle.output() as f32 / 15.0;
+            states[3] = apu.noise.output() as f32 / 15.0;
+            states[4] = apu.dmc.output_level as f32 / 127.0;
+            // Approximate master level from last output
+            states[5] = self.last_audio_sample.abs();
         }
         states
     }
 
     pub fn get_cpu_registers(&self) -> (u16, u8, u8, u8, u8, u8) {
-        (self.cpu.pc, self.cpu.a, self.cpu.x, self.cpu.y, self.cpu.sp, self.cpu.p)
+        (
+            self.cpu.pc,
+            self.cpu.a,
+            self.cpu.x,
+            self.cpu.y,
+            self.cpu.sp,
+            self.cpu.p,
+        )
     }
 
     pub fn step_instruction(&mut self) {
@@ -301,7 +334,7 @@ impl NES {
         let mut cycles_to_add = self.cpu.step(&mut self.bus);
         let dma_stall = self.bus.take_cpu_stall_cycles();
         cycles_to_add = cycles_to_add.saturating_add(dma_stall);
-        
+
         // Catch up other components
         self.master_cpu_cycles = self.master_cpu_cycles.saturating_add(cycles_to_add);
         self.total_cycles = cycles_before.saturating_add(cycles_to_add);

@@ -165,9 +165,9 @@ impl Bus {
                     self.cpu_data_bus
                 }
             }
-            // Unallocated CPU I/O ($4018–$40FF): nothing drives the bus (nesdev + cpu_exec_space).
-            0x4018..=0x40FF => self.cpu_data_bus,
-            0x4100..=0xFFFF => {
+            // Unallocated CPU I/O ($4018–$401F): nothing drives the bus.
+            0x4018..=0x401F => self.cpu_data_bus,
+            0x4020..=0xFFFF => {
                 if let Some(ref mut rom) = self.rom {
                     rom.mapper.read_prg(addr)
                 } else {
@@ -287,5 +287,28 @@ impl Bus {
         let stall = self.cpu_stall_cycles;
         self.cpu_stall_cycles = 0;
         stall
+    }
+
+    pub fn reset(&mut self, hard: bool) {
+        if hard {
+            if let Some(ref mut ram) = self.ram {
+                *ram = RAM::new();
+            }
+            if let Some(ref mut ppu) = self.ppu {
+                *ppu = PPU::new();
+            }
+            if let Some(ref mut apu) = self.apu {
+                *apu = APU::new();
+            }
+        }
+
+        if let Some(ref mut rom) = self.rom {
+            rom.mapper.reset();
+        }
+
+        self.nmi_pending = false;
+        self.irq_pending = false;
+        self.cpu_data_bus = 0;
+        self.cpu_stall_cycles = 0;
     }
 }

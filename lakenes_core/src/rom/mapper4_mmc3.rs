@@ -1,7 +1,7 @@
 use super::{Mapper, Mirroring};
 use alloc::{vec, vec::Vec};
 
-pub struct Mapper4 {
+pub struct MMC3 {
     prg_rom: Vec<u8>,
     chr_rom: Vec<u8>,
     prg_ram: Vec<u8>,
@@ -31,8 +31,8 @@ pub struct Mapper4 {
     a12_low_streak: u8,
 }
 
-impl Mapper4 {
-    pub fn new(prg_rom: Vec<u8>, chr_rom: Vec<u8>) -> Self {
+impl MMC3 {
+    pub fn new(prg_rom: Vec<u8>, chr_rom: Vec<u8>, initial_mirroring: Mirroring) -> Self {
         let num_prg_banks = prg_rom.len() / 8192;
         let num_chr_banks = if !chr_rom.is_empty() {
             chr_rom.len() / 1024
@@ -48,7 +48,7 @@ impl Mapper4 {
             regs: [0; 8],
             prg_bank_mode: false,
             chr_inversion: false,
-            mirroring: Mirroring::Vertical,
+            mirroring: initial_mirroring,
             irq_counter: 0,
             irq_latch: 0,
             irq_reload: false,
@@ -75,14 +75,11 @@ impl Mapper4 {
     }
 
     fn read_prg_bank(&self, addr: u16) -> usize {
-        // 8KB Banks
-        // Fixed: -1 is Last Bank. -2 is Second to Last.
         let last_bank = self.num_prg_banks.saturating_sub(1);
         let second_last = self.num_prg_banks.saturating_sub(2);
 
         let bank_idx = match (addr >> 13) & 0x03 {
             0 => {
-                // $8000
                 if self.prg_bank_mode {
                     second_last
                 } else {
@@ -90,11 +87,9 @@ impl Mapper4 {
                 }
             }
             1 => {
-                // $A000
                 self.regs[7] as usize
             }
             2 => {
-                // $C000
                 if self.prg_bank_mode {
                     self.regs[6] as usize
                 } else {
@@ -102,7 +97,6 @@ impl Mapper4 {
                 }
             }
             3 => {
-                // $E000
                 last_bank
             }
             _ => 0,
@@ -115,13 +109,8 @@ impl Mapper4 {
         if self.num_chr_banks == 0 {
             return 0;
         }
-        // 1KB Banks
-        // R0, R1 = 2KB blocks (index & FE)
-        // R2, R3, R4, R5 = 1KB blocks
 
         let bank = if self.chr_inversion {
-            // $0000-$0FFF: 4 x 1KB (R2,R3,R4,R5)
-            // $1000-$1FFF: 2 x 2KB (R0,R1)
             match addr {
                 0x0000..=0x03FF => self.regs[2] as usize,
                 0x0400..=0x07FF => self.regs[3] as usize,
@@ -132,8 +121,6 @@ impl Mapper4 {
                 _ => 0,
             }
         } else {
-            // $0000-$0FFF: 2 x 2KB (R0,R1)
-            // $1000-$1FFF: 4 x 1KB (R2,R3,R4,R5)
             match addr {
                 0x0000..=0x07FF => (self.regs[0] & 0xFE) as usize + ((addr >> 10) & 1) as usize,
                 0x0800..=0x0FFF => (self.regs[1] & 0xFE) as usize + ((addr >> 10) & 1) as usize,
@@ -148,7 +135,7 @@ impl Mapper4 {
     }
 }
 
-impl Mapper for Mapper4 {
+impl Mapper for MMC3 {
     fn read_prg(&mut self, addr: u16) -> u8 {
         match addr {
             0x6000..=0x7FFF => self.prg_ram[(addr - 0x6000) as usize],
@@ -172,25 +159,20 @@ impl Mapper for Mapper4 {
             }
             0x8000..=0x9FFF => {
                 if (addr & 1) == 0 {
-                    // Bank Select (Even)
                     self.target_register = data & 0x07;
                     self.prg_bank_mode = (data & 0x40) != 0;
                     self.chr_inversion = (data & 0x80) != 0;
                 } else {
-                    // Bank Data (Odd)
                     self.regs[self.target_register as usize] = data;
                 }
             }
             0xA000..=0xBFFF => {
                 if (addr & 1) == 0 {
-                    // Mirroring
                     self.mirroring = if (data & 0x01) == 0 {
                         Mirroring::Vertical
                     } else {
                         Mirroring::Horizontal
                     };
-                } else {
-                    // PRG RAM Protect
                 }
             }
             0xC000..=0xDFFF => {
@@ -203,7 +185,7 @@ impl Mapper for Mapper4 {
             0xE000..=0xFFFF => {
                 if (addr & 1) == 0 {
                     self.irq_enabled = false;
-                    self.irq_active = false; // Acknowledge IRQ
+                    self.irq_active = false;
                 } else {
                     self.irq_enabled = true;
                 }
@@ -250,7 +232,6 @@ impl Mapper for Mapper4 {
 
     fn ppu_bus_address(&mut self, addr: u16) {
         let addr = addr & 0x3FFF;
-        // Palette reads are internal to the PPU; do not treat as cartridge bus activity for A12.
         if addr >= 0x3F00 {
             return;
         }

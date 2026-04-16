@@ -56,7 +56,8 @@ impl WasmNes {
         noise: f32,
         dmc: f32,
     ) {
-        self.nes.set_apu_volumes(master, pulse1, pulse2, triangle, noise, dmc);
+        self.nes
+            .set_apu_volumes(master, pulse1, pulse2, triangle, noise, dmc);
     }
 
     pub fn get_ppu_mask(&self) -> u8 {
@@ -71,7 +72,7 @@ impl WasmNes {
         self.nes.set_ppu_mask_override(mask);
     }
 
-    pub fn get_rom_mapper_id(&self) -> u8 {
+    pub fn get_rom_mapper_id(&self) -> u16 {
         self.nes.get_rom_mapper_id()
     }
 

@@ -1,14 +1,14 @@
 use super::{Mapper, Mirroring};
 use alloc::vec::Vec;
 
-pub struct Mapper7 {
+pub struct AxROM {
     prg_rom: Vec<u8>,
     chr: Vec<u8>,
     selected_prg_bank: usize,
     one_screen_high: bool,
 }
 
-impl Mapper7 {
+impl AxROM {
     pub fn new(prg_rom: Vec<u8>, chr: Vec<u8>) -> Self {
         Self {
             prg_rom,
@@ -19,7 +19,7 @@ impl Mapper7 {
     }
 }
 
-impl Mapper for Mapper7 {
+impl Mapper for AxROM {
     fn read_prg(&mut self, addr: u16) -> u8 {
         if addr < 0x8000 {
             return 0;
