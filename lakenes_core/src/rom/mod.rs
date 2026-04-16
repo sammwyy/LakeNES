@@ -1,28 +1,28 @@
 use alloc::boxed::Box;
 
-pub mod mapper0_nrom;
-pub mod mapper10_mmc4;
+pub mod mapper000_nrom;
+pub mod mapper001_mmc1;
+pub mod mapper002_uxrom;
+pub mod mapper003_cnrom;
+pub mod mapper004_mmc3;
+pub mod mapper005_mmc5;
+pub mod mapper007_axrom;
+pub mod mapper009_mmc2;
+pub mod mapper010_mmc4;
 pub mod mapper178_nj0430;
-pub mod mapper1_mmc1;
-pub mod mapper2_uxrom;
 pub mod mapper228_action52;
-pub mod mapper3_cnrom;
-pub mod mapper4_mmc3;
-pub mod mapper5_mmc5;
-pub mod mapper7_axrom;
-pub mod mapper9_mmc2;
 
-use mapper0_nrom::NROM;
-use mapper1_mmc1::MMC1;
-use mapper2_uxrom::UxROM;
-use mapper228_action52::Mapper228;
-use mapper3_cnrom::CNROM;
-use mapper4_mmc3::MMC3;
-use mapper5_mmc5::MMC5;
-use mapper7_axrom::AxROM;
-use mapper9_mmc2::MMC2;
-use mapper10_mmc4::MMC4;
+use mapper000_nrom::NROM;
+use mapper001_mmc1::MMC1;
+use mapper002_uxrom::UxROM;
+use mapper003_cnrom::CNROM;
+use mapper004_mmc3::MMC3;
+use mapper005_mmc5::MMC5;
+use mapper007_axrom::AxROM;
+use mapper009_mmc2::MMC2;
+use mapper010_mmc4::MMC4;
 use mapper178_nj0430::NJ0430;
+use mapper228_action52::Mapper228;
 
 const NES_HEADER_SIZE: usize = 16;
 const PRG_ROM_BANK_SIZE: usize = 16384;

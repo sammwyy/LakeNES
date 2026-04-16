@@ -146,11 +146,4 @@ impl Mapper for Mapper228 {
     fn read_ppu(&mut self, _addr: u16, _vram: &[u8]) -> Option<u8> {
         None
     }
-
-    // Note: Mapper trait doesn't currently support $4020-$5FFF writes easily if it's only called for PRG ($8000+).
-    // I need to check if Bus calls Mapper for $4020.
 }
-
-// Manual implementation for $4020-$5FFF if needed.
-// Action 52 uses $4020-4023 for 16 bits of RAM.
-// Let's check lakenes_core\src\bus.rs to see where $4020 goes.
