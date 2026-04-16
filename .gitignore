@@ -1,3 +1,4 @@
 /target
 .old/
 ref/
+lakenes_wasm/node_modules/

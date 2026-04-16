@@ -1,13 +1,12 @@
 {
   "name": "lakenes-wasm",
-  "type": "module",
   "version": "0.1.0",
   "files": [
     "lakenes_wasm_bg.wasm",
     "lakenes_wasm.js",
     "lakenes_wasm.d.ts"
   ],
-  "main": "lakenes_wasm.js",
+  "module": "lakenes_wasm.js",
   "types": "lakenes_wasm.d.ts",
   "sideEffects": [
     "./snippets/*"
