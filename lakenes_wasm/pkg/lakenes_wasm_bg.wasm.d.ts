@@ -1,0 +1,36 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const __wbg_wasmnes_free: (a: number, b: number) => void;
+export const wasmnes_audio_buffer_len: (a: number) => number;
+export const wasmnes_disassemble: (a: number, b: number) => [number, number];
+export const wasmnes_get_apu_channels_state: (a: number) => [number, number];
+export const wasmnes_get_audio_sample: (a: number) => number;
+export const wasmnes_get_cpu_registers: (a: number) => [number, number];
+export const wasmnes_get_frame_buffer_ptr: (a: number) => number;
+export const wasmnes_get_pattern_table: (a: number, b: number) => [number, number];
+export const wasmnes_get_ppu_mask: (a: number) => number;
+export const wasmnes_get_ppu_oam: (a: number) => [number, number];
+export const wasmnes_get_ppu_palette: (a: number) => [number, number];
+export const wasmnes_get_rom_chr_size: (a: number) => number;
+export const wasmnes_get_rom_mapper_id: (a: number) => number;
+export const wasmnes_get_rom_prg_size: (a: number) => number;
+export const wasmnes_get_total_cycles: (a: number) => bigint;
+export const wasmnes_get_total_frames: (a: number) => bigint;
+export const wasmnes_is_paused: (a: number) => number;
+export const wasmnes_new: (a: number, b: number) => number;
+export const wasmnes_set_apu_volumes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+export const wasmnes_set_audio_sample_rate: (a: number, b: number) => void;
+export const wasmnes_set_paused: (a: number, b: number) => void;
+export const wasmnes_set_ppu_mask_override: (a: number, b: number) => void;
+export const wasmnes_set_speed: (a: number, b: number) => void;
+export const wasmnes_step_cycle: (a: number) => bigint;
+export const wasmnes_step_frame: (a: number) => void;
+export const wasmnes_step_instruction: (a: number) => void;
+export const wasmnes_update_joypad: (a: number, b: number, c: number) => void;
+export const wasmnes_write_ppu_mask: (a: number, b: number) => void;
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __wbindgen_malloc: (a: number, b: number) => number;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __wbindgen_externrefs: WebAssembly.Table;
+export const __wbindgen_start: () => void;

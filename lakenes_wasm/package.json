@@ -6,9 +6,11 @@
   "scripts": {
     "build": "wasm-pack build --target web",
     "dev": "npm run build && npx -y http-server .",
-    "start": "npx -y http-server ."
+    "start": "npx -y http-server .",
+    "deploy": "npm run build && gh-pages -d ."
   },
   "devDependencies": {
+    "gh-pages": "^6.1.1",
     "wasm-pack": "^0.12.1"
   }
 }
