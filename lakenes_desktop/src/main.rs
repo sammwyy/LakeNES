@@ -54,13 +54,20 @@ fn main() {
 
     let ring = HeapRb::<f32>::new(32768); // Larger ring buffer for smoother audio
     let (mut producer, mut consumer) = ring.split();
+    let mut last_stream_sample = 0.0f32;
 
     let stream = device
         .build_output_stream(
             &config.into(),
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 for frame in data.chunks_mut(channels) {
-                    let sample = consumer.try_pop().unwrap_or(0.0);
+                    let sample = if let Some(v) = consumer.try_pop() {
+                        last_stream_sample = v;
+                        v
+                    } else {
+                        // Hold the last value on temporary underruns to avoid zipper/echo artifacts.
+                        last_stream_sample
+                    };
                     for s in frame.iter_mut() {
                         *s = sample;
                     }

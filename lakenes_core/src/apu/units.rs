@@ -161,13 +161,13 @@ impl Sweep {
 
     pub fn tick(&mut self, timer_period: &mut u16) {
         if self.reload {
-            if self.divider == 0 && self.enabled && self.shift > 0 {
+            if self.divider == 0 && self.enabled && self.shift > 0 && !self.is_muting(*timer_period) {
                 self.adjust_period(timer_period);
             }
             self.divider = self.period;
             self.reload = false;
         } else if self.divider == 0 {
-            if self.enabled && self.shift > 0 {
+            if self.enabled && self.shift > 0 && !self.is_muting(*timer_period) {
                 self.adjust_period(timer_period);
             }
             self.divider = self.period;
@@ -177,34 +177,22 @@ impl Sweep {
     }
 
     fn adjust_period(&self, timer_period: &mut u16) {
-        let change = *timer_period >> self.shift;
+        *timer_period = self.target_period(*timer_period) & 0x07FF;
+    }
+
+    #[inline(always)]
+    fn target_period(&self, timer_period: u16) -> u16 {
+        let change = timer_period >> self.shift;
         if self.negate {
-            // Pulse 1 (channel 1) uses one's-complement.
-            // Pulse 2 (channel 2) uses two's-complement.
-            if self.channel == 1 {
-                *timer_period = timer_period.saturating_sub(change).saturating_sub(1);
-            } else {
-                *timer_period = timer_period.saturating_sub(change);
-            }
+            let extra = if self.channel == 1 { 1 } else { 0 };
+            timer_period.wrapping_sub(change).wrapping_sub(extra)
         } else {
-            let target = *timer_period + change;
-            if target <= 0x7FF {
-                *timer_period = target;
-            }
+            timer_period.wrapping_add(change)
         }
     }
 
     pub fn is_muting(&self, timer_period: u16) -> bool {
-        if timer_period < 8 {
-            return true;
-        }
-        if !self.negate && self.shift > 0 {
-            let change = timer_period >> self.shift;
-            if timer_period + change > 0x7FF {
-                return true;
-            }
-        }
-        false
+        timer_period < 8 || (self.shift > 0 && self.target_period(timer_period) > 0x07FF)
     }
 }
 

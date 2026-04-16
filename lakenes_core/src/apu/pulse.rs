@@ -60,7 +60,7 @@ impl Pulse {
     pub fn step_timer(&mut self) {
         if self.timer == 0 {
             self.timer = self.timer_period;
-            self.sequence_pos = (self.sequence_pos.wrapping_sub(1)) & 7;
+            self.sequence_pos = (self.sequence_pos.wrapping_add(1)) & 7;
         } else {
             self.timer -= 1;
         }

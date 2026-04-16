@@ -135,6 +135,7 @@ pub struct APU {
     pub dmc: DMC,
     frame_counter: FrameCounter,
     waveform_master_cycles: u64,
+    cpu_odd_cycle: bool,
     filters: [AudioFilter; 3],
     dmc_cpu_stall_cycles: u64,
     pub volume_master: f32,
@@ -143,8 +144,7 @@ pub struct APU {
     pub volume_triangle: f32,
     pub volume_noise: f32,
     pub volume_dmc: f32,
-    sample_accumulator: f32,
-    sample_count: u32,
+    current_raw_sample: f32,
     last_sample: f32,
 }
 
@@ -166,6 +166,7 @@ impl APU {
             dmc: DMC::new(),
             frame_counter: FrameCounter::new(),
             waveform_master_cycles: 0,
+            cpu_odd_cycle: false,
             filters: Self::make_filters(44_100.0),
             dmc_cpu_stall_cycles: 0,
             volume_master: 1.0,
@@ -174,8 +175,7 @@ impl APU {
             volume_triangle: 1.0,
             volume_noise: 1.0,
             volume_dmc: 1.0,
-            sample_accumulator: 0.0,
-            sample_count: 0,
+            current_raw_sample: 0.0,
             last_sample: 0.0,
         }
     }
@@ -256,11 +256,16 @@ impl APU {
                 self.dmc.irq_flag = false;
             }
             0x4017 => {
-                let delay = if (self.waveform_master_cycles % 2) == 0 { 3 } else { 4 };
+                // The $4017 write delay depends on the CPU cycle parity at write time.
+                let delay = if self.cpu_odd_cycle { 4 } else { 3 };
                 self.frame_counter.schedule_reset(val, delay);
             }
             _ => {}
         }
+    }
+
+    pub fn set_cpu_cycle_parity(&mut self, is_odd: bool) {
+        self.cpu_odd_cycle = is_odd;
     }
 
     pub fn read_status(&mut self) -> u8 {
@@ -273,7 +278,6 @@ impl APU {
         if self.dmc.irq_flag { res |= 0x80; }
         if self.frame_counter.irq_flag { res |= 0x40; }
         self.frame_counter.irq_flag = false;
-        self.dmc.irq_flag = false;
         res
     }
 
@@ -303,9 +307,8 @@ impl APU {
             self.dmc.step_timer();
         }
 
-        // Downsampling accumulation
-        self.sample_accumulator += self.get_raw_sample();
-        self.sample_count += 1;
+        // Keep the latest mixed raw sample; output resampling happens in NES core timing.
+        self.current_raw_sample = self.get_raw_sample();
 
         // Frame Counter signals
         let (qf, hf, _irq) = fc;
@@ -346,10 +349,7 @@ impl APU {
 
     #[inline(always)]
     pub fn output_sample(&mut self) -> f32 {
-        if self.sample_count == 0 { return self.last_sample; }
-        let mut out = self.sample_accumulator / self.sample_count as f32;
-        self.sample_accumulator = 0.0;
-        self.sample_count = 0;
+        let mut out = self.current_raw_sample;
         for filter in &mut self.filters { out = filter.tick(out); }
         self.last_sample = out;
         out

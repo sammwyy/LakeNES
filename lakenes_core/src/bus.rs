@@ -230,6 +230,7 @@ impl Bus {
             }
             0x4000..=0x4013 | 0x4015 | 0x4017 => {
                 if let Some(ref mut apu) = self.apu {
+                    apu.set_cpu_cycle_parity((cpu_cycles & 1) != 0);
                     apu.write(addr, value);
                 }
             }

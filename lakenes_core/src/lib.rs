@@ -123,6 +123,9 @@ impl NES {
     }
 
     pub fn step_cycle(&mut self) -> u64 {
+        if let Some(ref mut apu) = self.bus.apu {
+            apu.set_cpu_cycle_parity((self.master_cpu_cycles & 1) != 0);
+        }
         let mut cpu_cycles = self.cpu.step(&mut self.bus);
 
         // Capture any DMC stalls generated during APU steps from the previous instruction's burst.
@@ -145,6 +148,10 @@ impl NES {
             for _ in 0..cpu_cycles {
                 apu_ref.step(|addr| self.bus.read(addr));
                 self.master_apu_cycles = self.master_apu_cycles.saturating_add(1);
+                let dmc_stall = apu_ref.take_dmc_cpu_stall_cycles();
+                if dmc_stall > 0 {
+                    self.bus.add_cpu_stall_cycles(dmc_stall);
+                }
 
                 self.audio_phase += self.audio_sample_rate;
                 while self.audio_phase >= Self::CPU_FREQUENCY_HZ {
@@ -155,11 +162,6 @@ impl NES {
                     }
                     self.audio_buffer.push_back(sample);
                 }
-            }
-            // If the APU steps triggered a DMC fetch, add those cycles to the stall pool.
-            let dmc_stall = apu_ref.take_dmc_cpu_stall_cycles();
-            if dmc_stall > 0 {
-                self.bus.add_cpu_stall_cycles(dmc_stall);
             }
         }
         self.bus.apu = apu;
