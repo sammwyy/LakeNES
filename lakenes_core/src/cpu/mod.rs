@@ -1,4 +1,5 @@
 mod instructions;
+pub mod disasm;
 
 use crate::bus::Bus;
 use instructions::*;

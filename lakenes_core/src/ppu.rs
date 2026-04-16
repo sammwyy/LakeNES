@@ -6,7 +6,7 @@ use bitflags::bitflags;
 //  CONSTANTS & LOOKUP TABLES
 // =========================================================================
 
-const NES_PALETTE: [u32; 64] = [
+pub(crate) const NES_PALETTE: [u32; 64] = [
     0x666666, 0x002A88, 0x1412A7, 0x3B00A4, 0x5C007E, 0x6E0040, 0x6C0600, 0x561D00, 0x333500,
     0x0B4800, 0x005200, 0x004F08, 0x00404D, 0x000000, 0x000000, 0x000000, 0xADADAD, 0x155FD9,
     0x4240FF, 0x7527FE, 0xA01ACC, 0xB71E7B, 0xB53120, 0x994E00, 0x6B6D00, 0x388700, 0x0C9300,
@@ -179,6 +179,7 @@ pub struct PPU {
 
     pub odd_frame: bool,
     vblank_suppress: bool,
+    pub mask_override: Option<u8>,
 }
 
 impl PPU {
@@ -281,6 +282,7 @@ impl PPU {
             scroll_y: 0,
             odd_frame: false,
             vblank_suppress: false,
+            mask_override: None,
         }
     }
 
@@ -296,8 +298,16 @@ impl PPU {
     }
 
     // $2001 PPUMASK
-    fn write_mask(&mut self, value: u8) {
+    pub fn write_mask(&mut self, value: u8) {
         self.mask = Mask::from_bits_truncate(value);
+    }
+
+    pub fn mask_bits(&self) -> u8 {
+        self.mask_override.unwrap_or(self.mask.bits())
+    }
+
+    pub fn set_mask_override(&mut self, mask: Option<u8>) {
+        self.mask_override = mask;
     }
 
     // $2002 PPUSTATUS
@@ -418,9 +428,20 @@ impl PPU {
                 let mirrored = Self::mirror_vram_addr(addr, mapper.mirroring());
                 self.vram[mirrored]
             }
-            0x3F00..=0x3FFF => {
-                self.palette_table[Self::palette_addr(addr)]
+            0x3F00..=0x3FFF => self.palette_table[Self::palette_addr(addr)],
+            _ => 0,
+        }
+    }
+
+    pub fn ppu_read_debug(&self, addr: u16, mapper: &mut dyn Mapper) -> u8 {
+        let addr = addr & 0x3FFF;
+        match addr {
+            0x0000..=0x1FFF => mapper.read_chr(addr),
+            0x2000..=0x3EFF => {
+                let mirrored = Self::mirror_vram_addr(addr, mapper.mirroring());
+                self.vram[mirrored]
             }
+            0x3F00..=0x3FFF => self.palette_table[Self::palette_addr(addr)],
             _ => 0,
         }
     }
@@ -436,7 +457,7 @@ impl PPU {
             if self.scanline == 0
                 && self.cycle == 0
                 && self.odd_frame
-                && self.mask.bits() & 0x18 != 0
+                && self.mask_bits() & 0x18 != 0
             {
                 self.cycle = 1;
             }
@@ -727,7 +748,7 @@ impl PPU {
         let mut bg_pixel = 0u8;
         let mut bg_palette = 0u8;
 
-        if self.mask.contains(Mask::RENDER_BACKGROUND) {
+        if (self.mask_bits() & 0x08) != 0 {
             let bit_mux = 0x8000 >> self.fine_x;
             let p0 = (self.bg_shifter_pattern_lo & bit_mux) != 0;
             let p1 = (self.bg_shifter_pattern_hi & bit_mux) != 0;
@@ -741,16 +762,16 @@ impl PPU {
         // Sprite 0 hit compares OAM entry 0's pattern against the background, independent
         // of sprite priority or which sprite wins the foreground mux.
         if self.sprite_zero_on_scanline
-            && self.mask.contains(Mask::RENDER_BACKGROUND)
-            && self.mask.contains(Mask::RENDER_SPRITES)
+            && (self.mask_bits() & 0x08) != 0
+            && (self.mask_bits() & 0x10) != 0
             && bg_pixel != 0
         {
             let s0 = self.sprite_zero_pattern_pixel_at(self.cycle - 1, mapper);
             if s0 != 0 {
                 let x = self.cycle - 1;
                 if x != 255 {
-                    let show_left_bg = self.mask.contains(Mask::RENDER_BACKGROUND_LEFT);
-                    let show_left_sp = self.mask.contains(Mask::RENDER_SPRITES_LEFT);
+                    let show_left_bg = (self.mask_bits() & 0x02) != 0;
+                    let show_left_sp = (self.mask_bits() & 0x04) != 0;
                     if x >= 8 || (show_left_bg && show_left_sp) {
                         self.status.insert(Status::SPRITE_ZHIT);
                     }
@@ -762,7 +783,7 @@ impl PPU {
         let mut fg_palette = 0u8;
         let mut fg_priority = false;
 
-        if self.mask.contains(Mask::RENDER_SPRITES) {
+        if (self.mask_bits() & 0x10) != 0 {
             for i in 0..self.scanline_sprites.len() {
                 let oam_idx = self.scanline_sprites[i] as usize;
                 let sprite_x = self.oam_data[oam_idx * 4 + 3];

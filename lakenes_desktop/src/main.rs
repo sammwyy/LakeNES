@@ -74,8 +74,7 @@ fn main() {
     stream.play().expect("Failed to start audio stream");
 
     if let Some(ref mut nes_instance) = nes {
-        nes_instance.set_audio_sample_rate(sample_rate);
-        nes_instance.set_audio_gain(0.4);
+        nes_instance.set_apu_volumes(200.0, 100.0, 100.0, 100.0, 100.0, 100.0);
     }
 
     // Pre-calculate samples per cycle
@@ -98,8 +97,7 @@ fn main() {
                     Ok(data) => {
                         nes = Some(NES::new(&data));
                         if let Some(ref mut nes_instance) = nes {
-                            nes_instance.set_audio_sample_rate(sample_rate);
-                            nes_instance.set_audio_gain(0.4);
+                            nes_instance.set_apu_volumes(200.0, 100.0, 100.0, 100.0, 100.0, 100.0);
                         }
                         log::info!("Loaded ROM: {:?}", path);
                     }
@@ -110,7 +108,7 @@ fn main() {
 
         if let Some(ref mut nes_instance) = nes {
             let speed = if window.is_key_down(Key::Tab) {
-                400
+                800
             } else {
                 100
             };

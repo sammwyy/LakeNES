@@ -44,6 +44,7 @@ impl Triangle {
         self.linear_reload = true;
     }
 
+    #[inline(always)]
     pub fn step_timer(&mut self) {
         if self.timer == 0 {
             self.timer = self.timer_period;
@@ -55,12 +56,14 @@ impl Triangle {
         }
     }
 
+    #[inline(always)]
     pub fn step_length(&mut self) {
         if !self.length_halt && self.length_counter > 0 {
             self.length_counter -= 1;
         }
     }
 
+    #[inline(always)]
     pub fn step_linear(&mut self) {
         if self.linear_reload {
             self.linear_counter = self.linear_counter_load;
@@ -72,6 +75,7 @@ impl Triangle {
         }
     }
 
+    #[inline(always)]
     pub fn output(&self) -> u8 {
         if self.length_counter == 0 || self.linear_counter == 0 {
             return 0;

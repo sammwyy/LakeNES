@@ -58,6 +58,7 @@ impl DMC {
 
     /// Clocked every CPU cycle. The DMC timer counts down and fires an output
     /// bit when it reaches zero, then reloads from the period table.
+    #[inline(always)]
     pub fn step_timer(&mut self) {
         // Nesdev: timer counts down each CPU cycle; at 0 after decrement, reload period and clock.
         // Starting a period with timer == rate yields one output clock every `rate` cycles.
@@ -74,6 +75,7 @@ impl DMC {
     ///   2. Shift register right by 1
     ///   3. Decrement bits_remaining
     ///   4. If bits_remaining reaches 0, reload from sample_buffer (or go silent)
+    #[inline(always)]
     fn clock_output(&mut self) {
         // Step 1: Apply the current LSB to the output level
         if !self.silent {
@@ -105,6 +107,7 @@ impl DMC {
 
     /// Should be called once per CPU cycle (after step_timer). Fetches the next
     /// sample byte from memory when the sample buffer is empty and bytes remain.
+    #[inline(always)]
     pub fn step_reader<F>(&mut self, read_mem: &mut F) -> bool
     where
         F: FnMut(u16) -> u8,

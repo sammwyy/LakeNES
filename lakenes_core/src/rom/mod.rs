@@ -50,6 +50,9 @@ pub trait Mapper {
 
 pub struct ROM {
     pub mapper: Box<dyn Mapper>,
+    pub mapper_id: u8,
+    pub prg_size: usize,
+    pub chr_size: usize,
 }
 
 impl ROM {
@@ -87,17 +90,17 @@ impl ROM {
         let prg_rom = bytes[offset..offset + prg_size].to_vec();
         offset += prg_size;
 
-        let chr_size = if chr_banks == 0 {
+        let chr_size_on_disk = if chr_banks == 0 {
             CHR_ROM_BANK_SIZE
         } else {
             chr_banks * CHR_ROM_BANK_SIZE
         };
 
         let chr_rom = if chr_banks > 0 {
-            if bytes.len() < offset + chr_size {
+            if bytes.len() < offset + chr_size_on_disk {
                 return Err(ROMError::IncompleteData);
             }
-            let data = bytes[offset..offset + chr_size].to_vec();
+            let data = bytes[offset..offset + chr_size_on_disk].to_vec();
             data
         } else {
             alloc::vec![0u8; CHR_ROM_BANK_SIZE]
@@ -106,6 +109,9 @@ impl ROM {
         log::info!("PRG ROM: {} banks ({} bytes)", prg_banks, prg_rom.len());
         log::info!("CHR ROM: {} banks ({} bytes)", chr_banks, chr_rom.len());
         log::info!("Mapper ID: {}", mapper_id);
+
+        let prg_len = prg_rom.len();
+        let chr_len = chr_rom.len();
 
         let mapper: Box<dyn Mapper> = match mapper_id {
             0 => Box::new(Mapper0::new(
@@ -141,6 +147,11 @@ impl ROM {
             }
         };
 
-        Ok(Self { mapper })
+        Ok(Self {
+            mapper,
+            mapper_id,
+            prg_size: prg_len,
+            chr_size: chr_len,
+        })
     }
 }

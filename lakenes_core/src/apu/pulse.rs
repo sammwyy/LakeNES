@@ -82,34 +82,32 @@ impl Pulse {
         self.envelope_start = true;
     }
 
+    #[inline(always)]
     pub fn step_timer(&mut self) {
         if self.timer == 0 {
             self.timer = self.timer_period;
-            self.sequence_pos = (self.sequence_pos.wrapping_add(1)) % 8;
+            self.sequence_pos = (self.sequence_pos.wrapping_add(1)) & 7;
         } else {
             self.timer -= 1;
         }
     }
 
+    #[inline(always)]
     pub fn step_length(&mut self) {
         if !self.length_halt && self.length_counter > 0 {
             self.length_counter -= 1;
         }
     }
 
+    #[inline(always)]
     pub fn step_envelope(&mut self) {
         // Period 0 in the volume nibble is treated as 16 (same as sweep period 0 → 8).
-        let period = if self.volume == 0 {
-            16
-        } else {
-            self.volume
-        };
         if self.envelope_start {
             self.envelope_start = false;
             self.envelope_vol = 15;
-            self.envelope_divider = period;
+            self.envelope_divider = self.volume;
         } else if self.envelope_divider == 0 {
-            self.envelope_divider = period;
+            self.envelope_divider = self.volume;
             if self.envelope_vol > 0 {
                 self.envelope_vol -= 1;
             } else if self.length_halt {
@@ -120,16 +118,11 @@ impl Pulse {
         }
     }
 
+    #[inline(always)]
     pub fn step_sweep(&mut self) {
-        let period = if self.sweep_period == 0 {
-            8
-        } else {
-            self.sweep_period
-        };
-
         if self.sweep_reload {
             self.sweep_reload = false;
-            self.sweep_divider = period;
+            self.sweep_divider = self.sweep_period;
             return;
         }
 
@@ -154,12 +147,13 @@ impl Pulse {
                     self.timer_period += change;
                 }
             }
-            self.sweep_divider = period;
+            self.sweep_divider = self.sweep_period;
         } else {
             self.sweep_divider -= 1;
         }
     }
 
+    #[inline(always)]
     pub fn output(&self) -> u8 {
         if !self.enabled
             || self.length_counter == 0

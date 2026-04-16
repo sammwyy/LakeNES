@@ -1,0 +1,19 @@
+[
+    "roms/apu/apu_dmc.nes",
+    "roms/apu/apu_noise.nes",
+    "roms/apu/apu_soundtest.nes",
+    "roms/apu/apu_square.nes",
+    "roms/apu/apu_test.nes",
+    "roms/apu/apu_triangle.nes",
+    "roms/cpu/cpu_dummy_reads.nes",
+    "roms/cpu/cpu_dummy_writes_oam.nes",
+    "roms/cpu/cpu_dummy_writes_ppumem.nes",
+    "roms/cpu/cpu_exec_space_apu.nes",
+    "roms/cpu/cpu_exec_space_ppuio.nes",
+    "roms/cpu/cpu_flag_concurrency.nes",
+    "roms/cpu/cpu_ram_after_reset.nes",
+    "roms/ppu/color_test.nes",
+    "roms/ppu/ppu_open_bus.nes",
+    "roms/ppu/scanline.nes",
+    "roms/ppu/test_ppu_read_buffer.nes"
+]

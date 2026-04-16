@@ -57,42 +57,37 @@ impl Noise {
         self.envelope_start = true;
     }
 
+    #[inline(always)]
     pub fn step_timer(&mut self) {
-        // Nesdev + blargg Nes_Noise: table entry T = CPU cycles between LFSR clocks (`time += period`).
-        // Count down every CPU cycle — not M2 like pulse.
-        let t = NOISE_PERIOD_TABLE[self.period_index as usize];
         if self.timer == 0 {
-            self.timer = t;
-            return;
-        }
-        self.timer -= 1;
-        if self.timer == 0 {
-            let shift = if self.mode { 6 } else { 1 };
-            let feedback = (self.shift_register & 0x01) ^ ((self.shift_register >> shift) & 0x01);
-            self.shift_register >>= 1;
-            self.shift_register |= feedback << 14;
-            self.timer = t;
+            self.timer = NOISE_PERIOD_TABLE[self.period_index as usize];
+        } else {
+            self.timer -= 1;
+            if self.timer == 0 {
+                let shift = if self.mode { 6 } else { 1 };
+                let feedback = (self.shift_register & 0x01) ^ ((self.shift_register >> shift) & 0x01);
+                self.shift_register >>= 1;
+                self.shift_register |= feedback << 14;
+                self.timer = NOISE_PERIOD_TABLE[self.period_index as usize];
+            }
         }
     }
 
+    #[inline(always)]
     pub fn step_length(&mut self) {
         if !self.length_halt && self.length_counter > 0 {
             self.length_counter -= 1;
         }
     }
 
+    #[inline(always)]
     pub fn step_envelope(&mut self) {
-        let period = if self.volume == 0 {
-            16
-        } else {
-            self.volume
-        };
         if self.envelope_start {
             self.envelope_start = false;
             self.envelope_vol = 15;
-            self.envelope_divider = period;
+            self.envelope_divider = self.volume;
         } else if self.envelope_divider == 0 {
-            self.envelope_divider = period;
+            self.envelope_divider = self.volume;
             if self.envelope_vol > 0 {
                 self.envelope_vol -= 1;
             } else if self.length_halt {
@@ -103,6 +98,7 @@ impl Noise {
         }
     }
 
+    #[inline(always)]
     pub fn output(&self) -> u8 {
         if !self.enabled || self.length_counter == 0 || (self.shift_register & 0x01) == 1 {
             0

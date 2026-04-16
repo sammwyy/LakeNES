@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LakeNES - Web (WASM) Edition</title>
+    <style>
+        :root {
+            --bg-color: #050505;
+            --panel-bg: rgba(15, 15, 15, 0.8);
+            --accent-color: #4f46e5;
+            --accent-glow: rgba(79, 70, 229, 0.3);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.5);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --sidebar-width: 320px;
+        }
+
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            color: var(--text-primary);
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #000;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: var(--sidebar-width);
+            min-width: var(--sidebar-width);
+            height: 100%;
+            background: var(--panel-bg);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-right: 1px solid var(--glass-border);
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), margin-left 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            z-index: 100;
+            position: relative;
+        }
+
+        .sidebar.collapsed {
+            margin-left: calc(-1 * var(--sidebar-width));
+        }
+
+        .sidebar-header {
+            padding: 24px;
+            border-bottom: 1px solid var(--glass-border);
+            text-align: center;
+        }
+
+        .sidebar-title {
+            font-weight: 700;
+            font-size: 1.2rem;
+            letter-spacing: 2px;
+            color: var(--text-primary);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .sidebar-title:hover {
+            color: var(--accent-color);
+        }
+
+        .toggle-btn {
+            position: absolute;
+            right: -52px;
+            top: 24px;
+            width: 44px;
+            height: 44px;
+            background: rgba(15, 15, 15, 0.9);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-left: none;
+            border-radius: 0 14px 14px 0;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: var(--text-primary);
+            z-index: 101;
+            transition: all 0.3s;
+        }
+
+        .toggle-btn:hover {
+            color: var(--accent-color);
+            background: #111;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 4px;
+            margin: 16px;
+            border-radius: 12px;
+            gap: 2px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 10px 0;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border-radius: 10px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .tab-btn.active {
+            color: #fff;
+            background: var(--accent-color);
+            box-shadow: 0 4px 15px var(--accent-glow);
+        }
+
+        .tab-content {
+            padding: 24px;
+            overflow-y: auto;
+            flex-grow: 1;
+            display: none;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .tab-content.active {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Canvas Area */
+        .canvas-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: radial-gradient(circle at center, #111 0%, #000 70%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        #game-canvas {
+            height: 100vh;
+            width: auto;
+            aspect-ratio: 256 / 240;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            display: block;
+            box-shadow: 0 0 120px rgba(0, 0, 0, 0.9);
+            background: #000;
+        }
+
+        /* HUD */
+        #hud {
+            position: absolute;
+            top: 32px;
+            right: 32px;
+            z-index: 50;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 12px;
+        }
+
+        .hud-item {
+            background: rgba(0, 0, 0, 0.6);
+            padding: 6px 14px;
+            border-radius: 100px;
+            color: #fff;
+            font-size: 0.85rem;
+            font-family: 'JetBrains Mono', monospace;
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(12px);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .hud-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4caf50;
+            box-shadow: 0 0 8px #4caf50;
+        }
+
+        /* Test ROM List */
+        .test-rom-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        .test-rom-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .test-rom-item:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: var(--glass-border);
+            color: #fff;
+        }
+
+        .test-rom-tag {
+            font-weight: 700;
+            width: 45px;
+            opacity: 0.9;
+        }
+
+        .test-rom-tag.apu { color: #f87171; }
+        .test-rom-tag.cpu { color: #4ade80; }
+        .test-rom-tag.ppu { color: #60a5fa; }
+
+        /* UI Controls */
+        .info-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .info-label {
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 700;
+        }
+
+        .info-value {
+            font-size: 0.95rem;
+            font-family: 'JetBrains Mono', monospace;
+            color: #fff;
+        }
+
+        .control-row {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--accent-color);
+            background: rgba(255, 255, 255, 0.05);
+            height: 6px;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            padding: 8px 0;
+            transition: color 0.2s;
+        }
+
+        .checkbox-row:hover {
+            color: var(--accent-color);
+        }
+
+        .btn-primary {
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px var(--accent-glow);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px var(--accent-glow);
+            filter: brightness(1.1);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+            border: 1px solid var(--glass-border);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--accent-color);
+        }
+
+        /* Toggles */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 36px;
+            height: 20px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.1);
+            transition: .4s;
+            border-radius: 20px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider {
+            background-color: var(--accent-color);
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(16px);
+        }
+
+        /* VU Meter */
+        .vu-meter {
+            height: 4px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 2px;
+            overflow: hidden;
+            width: 100%;
+        }
+
+        .vu-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #4caf50, #ffeb3b, #f44336);
+            transition: width 0.1s;
+        }
+
+        /* APU Channels */
+        .apu-channels {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .apu-channel {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 10px;
+            border-radius: 10px;
+        }
+
+        .apu-channel canvas {
+            display: block;
+            width: 100%;
+            height: 30px;
+            margin: 8px 0;
+            background: #000;
+            border-radius: 4px;
+        }
+
+        /* PPU Debug */
+        .ppu-view {
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            background: #000;
+            margin-top: 10px;
+            width: 100%;
+            aspect-ratio: 1;
+        }
+
+        .debug-ppu-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+        }
+
+        #palette-view {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 4px;
+            margin-top: 8px;
+        }
+
+        .palette-cell {
+            width: 100%;
+            aspect-ratio: 1;
+            border-radius: 2px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* CPU Debug */
+        .cpu-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .reg-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin: 15px 0;
+        }
+
+        .reg {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 8px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+        }
+
+        .reg span:first-child {
+            color: var(--text-secondary);
+            font-size: 0.65rem;
+        }
+
+        .disasm-view {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--glass-border);
+            border-radius: 10px;
+            height: 180px;
+            overflow-y: auto;
+            padding: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .disasm-line {
+            display: flex;
+            gap: 10px;
+            color: var(--text-secondary);
+            opacity: 0.7;
+        }
+
+        .disasm-line.active {
+            color: #fff;
+            opacity: 1;
+            background: rgba(79, 70, 229, 0.2);
+            border-radius: 4px;
+            padding-left: 5px;
+        }
+
+        .disasm-addr {
+            color: var(--accent-color);
+            font-weight: 700;
+            width: 45px;
+        }
+
+        /* PAD Config */
+        .pad-config {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .config-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+        }
+
+        .key-input {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--glass-border);
+            color: var(--accent-color);
+            padding: 4px 8px;
+            border-radius: 4px;
+            width: 80px;
+            text-align: center;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 0.7rem;
+        }
+
+        .key-input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            background: rgba(79, 70, 229, 0.1);
+        }
+
+        .drop-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(79, 70, 229, 0.1);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            border: 4px dashed var(--accent-color);
+            pointer-events: none;
+            backdrop-filter: blur(10px);
+        }
+
+        .drop-overlay h1 {
+            color: #fff;
+            font-size: 3rem;
+            font-weight: 900;
+            text-shadow: 0 0 20px var(--accent-glow);
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-container">
+        <div class="sidebar" id="sidebar">
+            <button class="toggle-btn" onclick="toggleSidebar()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12h18M3 6h18M3 18h18" />
+                </svg>
+            </button>
+
+            <div class="sidebar-header">
+                <a href="https://github.com/sammwyy/lakenes" target="_blank" class="sidebar-title">LAKENES</a>
+            </div>
+
+            <div class="tabs">
+                <button class="tab-btn active" onclick="showTab('rom')">ROM</button>
+                <button class="tab-btn" onclick="showTab('apu')">AUDIO</button>
+                <button class="tab-btn" onclick="showTab('ppu')">VIDEO</button>
+                <button class="tab-btn" onclick="showTab('cpu')">CPU</button>
+                <button class="tab-btn" onclick="showTab('pad')">PAD</button>
+            </div>
+
+            <!-- ROM TAB -->
+            <div id="tab-rom" class="tab-content active">
+                <button class="btn-primary" onclick="document.getElementById('rom-input').click()">LOAD ROM</button>
+                <input type="file" id="rom-input" class="hidden" accept=".nes">
+
+                <div class="info-group">
+                    <span class="info-label">Name</span>
+                    <span id="rom-name" class="info-value">None</span>
+                </div>
+                <div class="info-group">
+                    <span class="info-label">Mapper</span>
+                    <span id="info-mapper" class="info-value">0</span>
+                </div>
+
+                <div class="test-rom-list" id="test-rom-list">
+                    <!-- ROMs cargadas por JS -->
+                </div>
+            </div>
+
+            <!-- AUDIO TAB -->
+            <div id="tab-apu" class="tab-content">
+                <div class="control-row">
+                    <div class="slider-header"><span>Master Vol</span> <span id="val-master">200%</span></div>
+                    <input type="range" id="vol-master" min="0" max="400" value="200">
+                    <div class="vu-meter">
+                        <div id="vu-master" class="vu-bar"></div>
+                    </div>
+                </div>
+
+                <div class="apu-channels">
+                    <div class="apu-channel">
+                        <span class="info-label">Pulse 1</span>
+                        <canvas id="view-p1" width="100" height="20"></canvas>
+                        <input type="range" id="vol-p1" min="0" max="200" value="100">
+                    </div>
+                    <div class="apu-channel">
+                        <span class="info-label">Pulse 2</span>
+                        <canvas id="view-p2" width="100" height="20"></canvas>
+                        <input type="range" id="vol-p2" min="0" max="200" value="100">
+                    </div>
+                    <div class="apu-channel">
+                        <span class="info-label">Triangle</span>
+                        <canvas id="view-tri" width="100" height="20"></canvas>
+                        <input type="range" id="vol-tri" min="0" max="200" value="100">
+                    </div>
+                    <div class="apu-channel">
+                        <span class="info-label">Noise</span>
+                        <canvas id="view-noise" width="100" height="20"></canvas>
+                        <input type="range" id="vol-noise" min="0" max="200" value="100">
+                    </div>
+                    <div class="apu-channel">
+                        <span class="info-label">DMC</span>
+                        <canvas id="view-dmc" width="100" height="20"></canvas>
+                        <input type="range" id="vol-dmc" min="0" max="200" value="100">
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIDEO TAB -->
+            <div id="tab-ppu" class="tab-content">
+                <div class="debug-ppu-section">
+                    <div class="debug-ppu-row">
+                        <span>Background</span>
+                        <label class="switch"><input type="checkbox" id="ppu-show-bg" checked><span
+                                class="slider"></span></label>
+                    </div>
+                    <canvas id="pt-0" class="ppu-view" width="128" height="128"></canvas>
+                </div>
+
+                <div class="debug-ppu-section">
+                    <div class="debug-ppu-row">
+                        <span>Sprites</span>
+                        <label class="switch"><input type="checkbox" id="ppu-show-sp" checked><span
+                                class="slider"></span></label>
+                    </div>
+                    <canvas id="pt-1" class="ppu-view" width="128" height="128"></canvas>
+                </div>
+
+                <div class="info-group">
+                    <span class="info-label">Palette</span>
+                    <div id="palette-view"></div>
+                </div>
+
+                <label class="checkbox-row"><input type="checkbox" id="ppu-grayscale"> Grayscale</label>
+            </div>
+
+            <!-- CPU TAB -->
+            <div id="tab-cpu" class="tab-content">
+                <div class="cpu-controls">
+                    <button id="btn-pause" class="btn-secondary" onclick="togglePause()">PAUSE</button>
+                    <button id="btn-step" class="btn-secondary" onclick="stepInstruction()">STEP</button>
+                </div>
+
+                <div class="cpu-debug-info">
+                    <div class="reg-grid">
+                        <div class="reg"><span>PC</span><span id="reg-pc">0000</span></div>
+                        <div class="reg"><span>A</span><span id="reg-a">00</span></div>
+                        <div class="reg"><span>X</span><span id="reg-x">00</span></div>
+                        <div class="reg"><span>Y</span><span id="reg-y">00</span></div>
+                    </div>
+                    <div class="disasm-view" id="disasm">
+                        <!-- Disasm lines -->
+                    </div>
+                </div>
+
+                <div class="control-row">
+                    <div class="slider-header"><span>Emulation Speed</span> <span id="val-speed">100%</span></div>
+                    <input type="range" id="speed" min="10" max="800" value="100">
+                </div>
+
+                <div class="info-group">
+                    <span class="info-label">Total Cycles</span>
+                    <span id="info-cycles" class="info-value">0</span>
+                </div>
+                <div class="info-group">
+                    <span class="info-label">Total Frames</span>
+                    <span id="info-frames" class="info-value">0</span>
+                </div>
+            </div>
+
+            <!-- PAD TAB -->
+            <div id="tab-pad" class="tab-content">
+                <span class="info-label">Configure Controls</span>
+                <div id="pad-config" class="pad-config">
+                    <!-- Config rows generated by JS -->
+                </div>
+            </div>
+        </div>
+
+        <div class="canvas-container">
+            <div id="hud">
+                <div class="hud-item">
+                    <div class="hud-dot"></div>
+                    <span id="fps-counter">0 FPS</span>
+                </div>
+                <div class="hud-item" id="info-delay"
+                    style="font-size: 0.7rem; color: #888; border: none; background: transparent;">
+                    0ms delay
+                </div>
+                <div class="hud-item" id="input-display" style="display: none;">
+                    KEYS: [ NONE ]
+                </div>
+            </div>
+            <canvas id="game-canvas" width="256" height="240"></canvas>
+        </div>
+    </div>
+
+    <div id="drop-overlay" class="drop-overlay">
+        <h1>DROP ROM</h1>
+    </div>
+
+    <script type="module" src="./index.js"></script>
+</body>
+
+</html>
