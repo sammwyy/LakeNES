@@ -9,6 +9,7 @@ pub mod mapper005_mmc5;
 pub mod mapper007_axrom;
 pub mod mapper009_mmc2;
 pub mod mapper010_mmc4;
+pub mod mapper174_ntdec;
 pub mod mapper178_nj0430;
 pub mod mapper228_action52;
 
@@ -21,6 +22,7 @@ use mapper005_mmc5::MMC5;
 use mapper007_axrom::AxROM;
 use mapper009_mmc2::MMC2;
 use mapper010_mmc4::MMC4;
+use mapper174_ntdec::NTDec5in1;
 use mapper178_nj0430::NJ0430;
 use mapper228_action52::Mapper228;
 
@@ -241,6 +243,7 @@ impl ROM {
             9 => Box::new(MMC2::new(prg_rom, chr_rom, mirroring_mode)),
             10 => Box::new(MMC4::new(prg_rom, chr_rom, mirroring_mode)),
             228 => Box::new(Mapper228::new(prg_rom, chr_rom)),
+            174 => Box::new(NTDec5in1::new(prg_rom, chr_rom)),
             178 => Box::new(NJ0430::new(prg_rom, submapper)),
             _ => {
                 log::warn!("Mapper {} not implemented, falling back to NROM", mapper_id);

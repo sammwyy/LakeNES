@@ -1,6 +1,5 @@
 use super::{Mapper, Mirroring};
 use alloc::vec::Vec;
-
 pub struct NJ0430 {
     prg_rom: Vec<u8>,
     chr_ram: Vec<u8>,
