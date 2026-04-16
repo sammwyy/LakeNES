@@ -1,0 +1,14 @@
+{
+  "name": "lakenes-wasm",
+  "version": "0.1.0",
+  "files": [
+    "lakenes_wasm_bg.wasm",
+    "lakenes_wasm.js",
+    "lakenes_wasm.d.ts"
+  ],
+  "module": "lakenes_wasm.js",
+  "types": "lakenes_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
