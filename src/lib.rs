@@ -56,7 +56,8 @@ impl WasmNes {
         noise: f32,
         dmc: f32,
     ) {
-        self.nes.set_apu_volumes(master, pulse1, pulse2, triangle, noise, dmc);
+        self.nes
+            .set_apu_volumes(master, pulse1, pulse2, triangle, noise, dmc);
     }
 
     pub fn get_ppu_mask(&self) -> u8 {
@@ -71,7 +72,7 @@ impl WasmNes {
         self.nes.set_ppu_mask_override(mask);
     }
 
-    pub fn get_rom_mapper_id(&self) -> u8 {
+    pub fn get_rom_mapper_id(&self) -> u16 {
         self.nes.get_rom_mapper_id()
     }
 
@@ -110,10 +111,6 @@ impl WasmNes {
     pub fn get_cpu_registers(&self) -> Vec<u32> {
         let (pc, a, x, y, sp, p) = self.nes.get_cpu_registers();
         vec![pc as u32, a as u32, x as u32, y as u32, sp as u32, p as u32]
-    }
-
-    pub fn step_instruction(&mut self) {
-        self.nes.step_instruction();
     }
 
     pub fn set_paused(&mut self, paused: bool) {

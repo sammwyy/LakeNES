@@ -64,32 +64,32 @@ async function loadTestRoms() {
         if (!container) return;
 
         container.innerHTML = `<span class="info-label" style="margin-bottom: 5px;">DEBUG ROMS</span>`;
-        
+
         list.forEach(path => {
             // path format: "roms/apu/apu_dmc.nes"
             const parts = path.split("/");
             const type = parts[1]; // apu, cpu, ppu
             const filename = parts[2].replace(".nes", "");
             const name = filename.replace(/_/g, " ");
-            
+
             const div = document.createElement("div");
             div.className = "test-rom-item";
             div.innerHTML = `<span class="test-rom-tag ${type}">[${type.toUpperCase()}]</span> <span>${name}</span>`;
-            
+
             div.onclick = async () => {
                 try {
                     const romRes = await fetch(`https://raw.githubusercontent.com/sammwyy/lakenes/main/${path}`);
                     const blob = await romRes.blob();
                     blob.name = filename + ".nes";
                     loadROM(blob);
-                } catch(e) {
+                } catch (e) {
                     console.error("Failed to download rom", e);
                 }
             };
-            
+
             container.appendChild(div);
         });
-    } catch(e) {
+    } catch (e) {
         console.error("Failed to load test roms", e);
     }
 }
@@ -482,11 +482,6 @@ window.togglePause = () => {
     nes?.set_paused(!nes.is_paused());
     const btn = document.getElementById("btn-pause");
     if (btn) btn.innerText = nes.is_paused() ? "RESUME" : "PAUSE";
-};
-
-window.stepInstruction = () => {
-    nes?.step_instruction();
-    updateCPUDebug();
 };
 
 window.toggleSidebar = () => document.getElementById('sidebar').classList.toggle('collapsed');

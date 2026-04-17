@@ -274,9 +274,6 @@ export class WasmNes {
         const ret = wasm.wasmnes_get_total_frames(this.__wbg_ptr);
         return BigInt.asUintN(64, ret);
     }
-    step_instruction() {
-        wasm.wasmnes_step_instruction(this.__wbg_ptr);
-    }
     /**
      * @returns {Uint32Array}
      */
