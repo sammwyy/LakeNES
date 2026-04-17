@@ -334,7 +334,8 @@ pub extern "C" fn retro_run() {
                 buttons |= 0x80;
             }
 
-            state.nes.update_joypad(0, buttons);
+            // lakenes_core currently reads input from player 1.
+            state.nes.update_joypad(1, buttons);
         }
     }
 
