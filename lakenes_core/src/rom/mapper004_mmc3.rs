@@ -140,17 +140,17 @@ impl MMC3 {
 }
 
 impl Mapper for MMC3 {
-    fn read_ex(&mut self, addr: u16) -> u8 {
+    fn read_ex(&mut self, addr: u16) -> Option<u8> {
         match addr {
             // $6000-$7FFF: WRAM (only if enabled via $A001 bit 7)
             0x6000..=0x7FFF => {
                 if self.wram_enabled {
-                    self.prg_ram[(addr - 0x6000) as usize]
+                    Some(self.prg_ram[(addr - 0x6000) as usize])
                 } else {
-                    0
+                    None
                 }
             }
-            _ => 0,
+            _ => None,
         }
     }
 
@@ -166,18 +166,18 @@ impl Mapper for MMC3 {
         }
     }
 
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_prg(&mut self, addr: u16) -> Option<u8> {
         match addr {
             0x8000..=0xFFFF => {
                 let bank = self.read_prg_bank(addr);
                 let offset = (bank * 8192) + (addr as usize & 0x1FFF);
                 if offset < self.prg_rom.len() {
-                    self.prg_rom[offset]
+                    Some(self.prg_rom[offset])
                 } else {
-                    0
+                    None
                 }
             }
-            _ => 0,
+            _ => None,
         }
     }
 

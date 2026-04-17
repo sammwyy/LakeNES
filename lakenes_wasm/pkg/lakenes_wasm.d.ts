@@ -21,7 +21,6 @@ export class WasmNes {
   get_rom_prg_size(): number;
   get_total_cycles(): bigint;
   get_total_frames(): bigint;
-  step_instruction(): void;
   get_cpu_registers(): Uint32Array;
   get_pattern_table(table_idx: number): Uint8Array;
   get_rom_mapper_id(): number;
@@ -63,7 +62,6 @@ export interface InitOutput {
   readonly wasmnes_set_speed: (a: number, b: number) => void;
   readonly wasmnes_step_cycle: (a: number) => bigint;
   readonly wasmnes_step_frame: (a: number) => void;
-  readonly wasmnes_step_instruction: (a: number) => void;
   readonly wasmnes_update_joypad: (a: number, b: number, c: number) => void;
   readonly wasmnes_write_ppu_mask: (a: number, b: number) => void;
   readonly __wbindgen_free: (a: number, b: number, c: number) => void;

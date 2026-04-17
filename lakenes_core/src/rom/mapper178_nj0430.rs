@@ -77,24 +77,24 @@ impl NJ0430 {
 }
 
 impl Mapper for NJ0430 {
-    fn read_ex(&mut self, addr: u16) -> u8 {
+    fn read_ex(&mut self, addr: u16) -> Option<u8> {
         match addr {
             0x5000..=0x5FFF => {
                 match self.submapper {
-                    1 => 0, // IR sensor bit 0
-                    2 => 0, // LPC Speech Chip
-                    _ => 0,
+                    1 => Some(0), // IR sensor bit 0
+                    2 => Some(0), // LPC Speech Chip
+                    _ => None,
                 }
             }
             0x6000..=0x7FFF => {
                 let offset = (self.ram_bank as usize * 8192) + (addr as usize - 0x6000);
                 if offset < self.prg_ram.len() {
-                    self.prg_ram[offset]
+                    Some(self.prg_ram[offset])
                 } else {
-                    0
+                    None
                 }
             }
-            _ => 0,
+            _ => None,
         }
     }
 
@@ -136,23 +136,23 @@ impl Mapper for NJ0430 {
         }
     }
 
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_prg(&mut self, addr: u16) -> Option<u8> {
         match addr {
             0x8000..=0xFFFF => {
                 if self.submapper == 3 && self.solder_pad_enabled {
                     // Solder path returns 2nd bit as well? Spec says 2-bit value.
                     // We'll return 0 for the menu selection.
-                    0
+                    Some(0)
                 } else {
                     let offset = self.get_prg_offset(addr);
                     if offset < self.prg_rom.len() {
-                        self.prg_rom[offset]
+                        Some(self.prg_rom[offset])
                     } else {
-                        0
+                        None
                     }
                 }
             }
-            _ => 0,
+            _ => None,
         }
     }
 

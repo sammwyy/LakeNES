@@ -26,7 +26,6 @@ export const wasmnes_set_ppu_mask_override: (a: number, b: number) => void;
 export const wasmnes_set_speed: (a: number, b: number) => void;
 export const wasmnes_step_cycle: (a: number) => bigint;
 export const wasmnes_step_frame: (a: number) => void;
-export const wasmnes_step_instruction: (a: number) => void;
 export const wasmnes_update_joypad: (a: number, b: number, c: number) => void;
 export const wasmnes_write_ppu_mask: (a: number, b: number) => void;
 export const __wbindgen_free: (a: number, b: number, c: number) => void;

@@ -143,25 +143,28 @@ impl Bus {
             // APU write-only registers ($4000–$4013) and $4014: bus not driven.
             0x4000..=0x4014 => self.cpu_data_bus,
             0x4015 => {
-                if let Some(ref mut apu) = self.apu {
-                    // Bit 5 is not driven by the APU; comes from open bus (last value on data bus).
+                let v = if let Some(ref mut apu) = self.apu {
+                    // Bit 5 is not driven by the APU; comes from open bus.
                     (apu.read(addr) & 0xDF) | (self.cpu_data_bus & 0x20)
                 } else {
                     self.cpu_data_bus
-                }
+                };
+                // Point 7: Reading from $4015 should not update the databus.
+                return v;
             }
             0x4016 => {
                 if let Some(ref mut joypad) = self.joypad1 {
-                    (joypad.read() & 0x01) | (self.cpu_data_bus & 0xFE)
+                    // Standard joypad drives D0-D4. D1-D4 are usually 0 on most consoles.
+                    // Bits 5-7 are open bus (Point 6).
+                    (joypad.read() & 0x01) | (self.cpu_data_bus & 0xE0)
                 } else {
                     self.cpu_data_bus
                 }
             }
             0x4017 => {
                 if let Some(ref mut joypad) = self.joypad2 {
-                    (joypad.read() & 0x01) | (self.cpu_data_bus & 0xFE)
+                    (joypad.read() & 0x01) | (self.cpu_data_bus & 0xE0)
                 } else {
-                    // No controller: full open bus (forcing D0 high breaks cpu_exec_space tests).
                     self.cpu_data_bus
                 }
             }
@@ -169,14 +172,15 @@ impl Bus {
             0x4018..=0x401F => self.cpu_data_bus,
             0x4020..=0x7FFF => {
                 if let Some(ref mut rom) = self.rom {
-                    rom.mapper.read_ex(addr)
+                    // Try to read from mapper; if it returns None, it's open bus.
+                    rom.mapper.read_ex(addr).unwrap_or(self.cpu_data_bus)
                 } else {
                     self.cpu_data_bus
                 }
             }
             0x8000..=0xFFFF => {
                 if let Some(ref mut rom) = self.rom {
-                    rom.mapper.read_prg(addr)
+                    rom.mapper.read_prg(addr).unwrap_or(self.cpu_data_bus)
                 } else {
                     self.cpu_data_bus
                 }
@@ -204,10 +208,7 @@ impl Bus {
                 let page = (value as u16) << 8;
                 for i in 0..256 {
                     let data = self.read(page + i as u16);
-                    if let Some(ref mut ppu) = self.ppu {
-                        ppu.oam_data[ppu.oam_addr as usize] = data;
-                        ppu.oam_addr = ppu.oam_addr.wrapping_add(1);
-                    }
+                    self.write(0x2004, data, cpu_cycles);
                 }
                 // OAM DMA: 513 CPU cycles if the write ends on an even cycle, 514 if odd (NTSC).
                 let stall = 513 + (cpu_cycles & 1);
@@ -300,6 +301,10 @@ impl Bus {
         let stall = self.cpu_stall_cycles;
         self.cpu_stall_cycles = 0;
         stall
+    }
+
+    pub fn get_cpu_data_bus(&self) -> u8 {
+        self.cpu_data_bus
     }
 
     pub fn reset(&mut self, hard: bool) {

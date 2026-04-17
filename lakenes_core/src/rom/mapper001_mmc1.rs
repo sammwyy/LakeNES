@@ -67,10 +67,10 @@ impl MMC1 {
 }
 
 impl Mapper for MMC1 {
-    fn read_ex(&mut self, addr: u16) -> u8 {
+    fn read_ex(&mut self, addr: u16) -> Option<u8> {
         match addr {
-            0x6000..=0x7FFF => self.prg_ram[(addr - 0x6000) as usize],
-            _ => 0,
+            0x6000..=0x7FFF => Some(self.prg_ram[(addr - 0x6000) as usize]),
+            _ => None,
         }
     }
 
@@ -83,7 +83,7 @@ impl Mapper for MMC1 {
         }
     }
 
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_prg(&mut self, addr: u16) -> Option<u8> {
         match addr {
             0x8000..=0xFFFF => {
                 let prg_mode = (self.control >> 2) & 0x03;
@@ -112,12 +112,12 @@ impl Mapper for MMC1 {
                     _ => 0,
                 };
                 if offset < self.prg_rom.len() {
-                    self.prg_rom[offset]
+                    Some(self.prg_rom[offset])
                 } else {
-                    0
+                    None
                 }
             }
-            _ => 0,
+            _ => None,
         }
     }
 

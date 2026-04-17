@@ -191,8 +191,7 @@ impl PPU {
     /// charge decays to 0 within ~1 s when not refreshed (ppu_open_bus test).
     const OPEN_BUS_DECAY_PERIOD: u32 = 341 * 262 * 60;
 
-    #[inline]
-    fn set_open_bus_from_cpu(&mut self, value: u8) {
+    pub fn set_open_bus_from_cpu(&mut self, value: u8) {
         self.open_bus = value;
         self.open_bus_decay_acc = 0;
     }

@@ -51,17 +51,17 @@ impl MMC2 {
 }
 
 impl Mapper for MMC2 {
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_prg(&mut self, addr: u16) -> Option<u8> {
         let bank = match addr {
             0x8000..=0x9FFF => self.prg_bank,
             0xA000..=0xBFFF => self.num_prg_banks_8k.saturating_sub(3),
             0xC000..=0xDFFF => self.num_prg_banks_8k.saturating_sub(2),
             0xE000..=0xFFFF => self.num_prg_banks_8k.saturating_sub(1),
-            _ => return 0,
+            _ => return None,
         };
 
         let offset = (bank % self.num_prg_banks_8k) * 8192 + (addr as usize & 0x1FFF);
-        self.prg_rom.get(offset).copied().unwrap_or(0)
+        self.prg_rom.get(offset).copied()
     }
 
     fn write_prg(&mut self, addr: u16, data: u8) {

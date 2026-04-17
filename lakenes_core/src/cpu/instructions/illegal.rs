@@ -330,57 +330,117 @@ fn lax_store(cpu: &mut CPU, v: u8) {
     cpu.update_zero_negative(v);
 }
 
+/// SHA ($93) — (indirect),Y
+/// Writes A & X & (base_high + 1).
+/// If the Y addition crosses a page, the written address is also corrupted.
 fn sha_ind_y(cpu: &mut CPU, bus: &mut Bus) {
     cpu.cycles += 6;
-    let addr = get_address_indirect_y_write(cpu, bus);
-    let h = (addr >> 8) as u8;
-    bus.write_cpu(addr, cpu.a & cpu.x & h.wrapping_add(1), cpu.cycles);
-}
-
-fn sha_abs_y(cpu: &mut CPU, bus: &mut Bus) {
-    let base = cpu.fetch_word(bus);
+    let ptr = cpu.fetch_byte(bus);
+    let lo = bus.read_cpu(ptr as u16) as u16;
+    let hi = bus.read_cpu(ptr.wrapping_add(1) as u16) as u16;
+    let base = (hi << 8) | lo;
     let addr = base.wrapping_add(cpu.y as u16);
+    let crossed = (base & 0xFF00) != (addr & 0xFF00);
+
+    // Dummy read on the un-carried address
     let dummy = (base & 0xFF00) | (addr & 0x00FF);
     let _ = bus.read_cpu(dummy);
-    let h = (base >> 8) as u8;
-    let v = cpu.a & cpu.x & h.wrapping_add(1);
-    cpu.cycles += 5;
-    bus.write_cpu(addr, v, cpu.cycles);
+
+    let base_hi = (base >> 8) as u8;
+    let val = cpu.a & cpu.x & base_hi.wrapping_add(1);
+    let target = if crossed {
+        (addr & 0x00FF) | ((val as u16) << 8)
+    } else {
+        addr
+    };
+    bus.write_cpu(target, val, cpu.cycles);
 }
 
+/// SHA ($9F) — absolute,Y
+fn sha_abs_y(cpu: &mut CPU, bus: &mut Bus) {
+    cpu.cycles += 5;
+    let base = cpu.fetch_word(bus);
+    let addr = base.wrapping_add(cpu.y as u16);
+    let crossed = (base & 0xFF00) != (addr & 0xFF00);
+
+    // Dummy read on the un-carried address
+    let dummy = (base & 0xFF00) | (addr & 0x00FF);
+    let _ = bus.read_cpu(dummy);
+
+    let base_hi = (base >> 8) as u8;
+    let val = cpu.a & cpu.x & base_hi.wrapping_add(1);
+    let target = if crossed {
+        (addr & 0x00FF) | ((val as u16) << 8)
+    } else {
+        addr
+    };
+    bus.write_cpu(target, val, cpu.cycles);
+}
+
+/// SHY ($9C) — absolute,X
 fn shy_abs_x(cpu: &mut CPU, bus: &mut Bus) {
+    cpu.cycles += 5;
     let base = cpu.fetch_word(bus);
     let addr = base.wrapping_add(cpu.x as u16);
+    let crossed = (base & 0xFF00) != (addr & 0xFF00);
+
+    // Dummy read on the un-carried address
     let dummy = (base & 0xFF00) | (addr & 0x00FF);
     let _ = bus.read_cpu(dummy);
-    let h = (addr >> 8) as u8;
-    let v = cpu.y & h.wrapping_add(1);
-    cpu.cycles += 5;
-    bus.write_cpu(addr, v, cpu.cycles);
+
+    let base_hi = (base >> 8) as u8;
+    let val = cpu.y & base_hi.wrapping_add(1);
+    let target = if crossed {
+        (addr & 0x00FF) | ((val as u16) << 8)
+    } else {
+        addr
+    };
+    bus.write_cpu(target, val, cpu.cycles);
 }
 
+/// SHX ($9E) — absolute,Y
 fn shx_abs_y(cpu: &mut CPU, bus: &mut Bus) {
+    cpu.cycles += 5;
     let base = cpu.fetch_word(bus);
     let addr = base.wrapping_add(cpu.y as u16);
+    let crossed = (base & 0xFF00) != (addr & 0xFF00);
+
+    // Dummy read on the un-carried address
     let dummy = (base & 0xFF00) | (addr & 0x00FF);
     let _ = bus.read_cpu(dummy);
-    let h = (addr >> 8) as u8;
-    let v = cpu.x & h.wrapping_add(1);
-    cpu.cycles += 5;
-    bus.write_cpu(addr, v, cpu.cycles);
+
+    let base_hi = (base >> 8) as u8;
+    let val = cpu.x & base_hi.wrapping_add(1);
+    let target = if crossed {
+        (addr & 0x00FF) | ((val as u16) << 8)
+    } else {
+        addr
+    };
+    bus.write_cpu(target, val, cpu.cycles);
 }
 
+/// TAS / SHS ($9B) — absolute,Y
+/// SP = A & X, then writes SP & (base_high + 1) with address corruption on page cross.
 fn tas_abs_y(cpu: &mut CPU, bus: &mut Bus) {
+    cpu.cycles += 5;
     let base = cpu.fetch_word(bus);
     let addr = base.wrapping_add(cpu.y as u16);
+    let crossed = (base & 0xFF00) != (addr & 0xFF00);
+
+    // Dummy read on the un-carried address
     let dummy = (base & 0xFF00) | (addr & 0x00FF);
     let _ = bus.read_cpu(dummy);
-    let s = cpu.x & cpu.a;
+
+    let s = cpu.a & cpu.x;
     cpu.sp = s;
-    let h = (addr >> 8) as u8;
-    let v = s & h.wrapping_add(1);
-    cpu.cycles += 5;
-    bus.write_cpu(addr, v, cpu.cycles);
+    let base_hi = (base >> 8) as u8;
+    let val = s & base_hi.wrapping_add(1);
+    let target = if crossed {
+        (addr & 0x00FF) | ((val as u16) << 8)
+    } else {
+        addr
+    };
+    bus.write_cpu(target, val, cpu.cycles);
 }
 
 fn las_abs_y(cpu: &mut CPU, bus: &mut Bus) {

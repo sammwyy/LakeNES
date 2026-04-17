@@ -28,17 +28,17 @@ impl NROM {
 }
 
 impl Mapper for NROM {
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_prg(&mut self, addr: u16) -> Option<u8> {
         if addr >= 0x8000 {
             let mut idx = addr as usize - 0x8000;
             if self.prg_banks == 1 {
                 idx = idx % 16384; // Mirror 16k to 32k
             }
             if idx < self.prg_rom.len() {
-                return self.prg_rom[idx];
+                return Some(self.prg_rom[idx]);
             }
         }
-        0
+        None
     }
 
     fn write_prg(&mut self, _addr: u16, _data: u8) {

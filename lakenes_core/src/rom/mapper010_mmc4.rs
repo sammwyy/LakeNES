@@ -60,10 +60,10 @@ impl MMC4 {
 }
 
 impl Mapper for MMC4 {
-    fn read_ex(&mut self, addr: u16) -> u8 {
+    fn read_ex(&mut self, addr: u16) -> Option<u8> {
         match addr {
-            0x6000..=0x7FFF => self.prg_ram[(addr - 0x6000) as usize],
-            _ => 0,
+            0x6000..=0x7FFF => Some(self.prg_ram[(addr - 0x6000) as usize]),
+            _ => None,
         }
     }
 
@@ -74,20 +74,20 @@ impl Mapper for MMC4 {
         }
     }
 
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_prg(&mut self, addr: u16) -> Option<u8> {
         match addr {
             0x8000..=0xBFFF => {
                 let bank = self.prg_bank % self.num_prg_banks_16k;
                 let offset = bank * 16384 + (addr as usize - 0x8000);
-                self.prg_rom.get(offset).copied().unwrap_or(0)
+                self.prg_rom.get(offset).copied()
             }
             0xC000..=0xFFFF => {
                 // Fixed to the last 16K bank
                 let bank = self.num_prg_banks_16k.saturating_sub(1);
                 let offset = bank * 16384 + (addr as usize - 0xC000);
-                self.prg_rom.get(offset).copied().unwrap_or(0)
+                self.prg_rom.get(offset).copied()
             }
-            _ => 0,
+            _ => None,
         }
     }
 

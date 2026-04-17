@@ -15,5 +15,6 @@
     "roms/ppu/color_test.nes",
     "roms/ppu/ppu_open_bus.nes",
     "roms/ppu/scanline.nes",
-    "roms/ppu/test_ppu_read_buffer.nes"
+    "roms/ppu/test_ppu_read_buffer.nes",
+    "roms/misc/misc_accuracy_coin"
 ]

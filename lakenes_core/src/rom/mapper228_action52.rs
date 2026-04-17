@@ -57,13 +57,13 @@ impl Mapper228 {
 }
 
 impl Mapper for Mapper228 {
-    fn read_ex(&mut self, addr: u16) -> u8 {
+    fn read_ex(&mut self, addr: u16) -> Option<u8> {
         match addr {
             0x4020..=0x5FFF => {
                 let idx = (addr as usize - 0x4020) % 4;
-                self.regs[idx]
+                Some(self.regs[idx])
             }
-            _ => 0,
+            _ => None,
         }
     }
 
@@ -77,12 +77,12 @@ impl Mapper for Mapper228 {
         }
     }
 
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_prg(&mut self, addr: u16) -> Option<u8> {
         match addr {
             0x8000..=0xFFFF => {
                 // Chip 2 is open bus
                 if self.prg_chip == 2 {
-                    return 0; // Or open bus behavior
+                    return None;
                 }
 
                 // Chip index mapping (0, 1, 3 in file mapped to 0, 1, 2)
@@ -90,7 +90,7 @@ impl Mapper for Mapper228 {
                     0 => 0,
                     1 => 1,
                     3 => 2,
-                    _ => return 0,
+                    _ => return None,
                 };
 
                 let chip_offset = (chip_idx as usize) * 512 * 1024;
@@ -100,22 +100,22 @@ impl Mapper for Mapper228 {
                     let bank = (self.prg_page >> 1) as usize;
                     let offset = chip_offset + bank * 32 * 1024 + (addr as usize & 0x7FFF);
                     if offset < self.prg_rom.len() {
-                        self.prg_rom[offset]
+                        Some(self.prg_rom[offset])
                     } else {
-                        0
+                        None
                     }
                 } else {
                     // Mode 1: 16k bank mirrored at $8000 and $C000
                     let bank = self.prg_page as usize;
                     let offset = chip_offset + bank * 16 * 1024 + (addr as usize & 0x3FFF);
                     if offset < self.prg_rom.len() {
-                        self.prg_rom[offset]
+                        Some(self.prg_rom[offset])
                     } else {
-                        0
+                        None
                     }
                 }
             }
-            _ => 0,
+            _ => None,
         }
     }
 

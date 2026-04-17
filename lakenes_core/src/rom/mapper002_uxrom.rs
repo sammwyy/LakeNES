@@ -25,23 +25,23 @@ impl UxROM {
 }
 
 impl Mapper for UxROM {
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_prg(&mut self, addr: u16) -> Option<u8> {
         if addr >= 0x8000 {
             if addr < 0xC000 {
                 // Switchable bank
                 let idx = (self.prg_bank_select * 16384) + (addr as usize - 0x8000);
                 if idx < self.prg_rom.len() {
-                    return self.prg_rom[idx];
+                    return Some(self.prg_rom[idx]);
                 }
             } else {
                 // Fixed last bank
                 let idx = self.last_bank_offset + (addr as usize - 0xC000);
                 if idx < self.prg_rom.len() {
-                    return self.prg_rom[idx];
+                    return Some(self.prg_rom[idx]);
                 }
             }
         }
-        0
+        None
     }
 
     fn write_prg(&mut self, addr: u16, data: u8) {

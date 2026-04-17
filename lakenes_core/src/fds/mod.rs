@@ -47,11 +47,11 @@ impl FDS {
 }
 
 impl Mapper for FDS {
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_prg(&mut self, addr: u16) -> Option<u8> {
         match addr {
-            0x8000..=0xDFFF => self.prg_ram[(addr - 0x6000) as usize],
-            0xE000..=0xFFFF => self.bios[(addr - 0xE000) as usize],
-            _ => 0,
+            0x8000..=0xDFFF => Some(self.prg_ram[(addr - 0x6000) as usize]),
+            0xE000..=0xFFFF => Some(self.bios[(addr - 0xE000) as usize]),
+            _ => None,
         }
     }
 
@@ -69,7 +69,7 @@ impl Mapper for FDS {
         self.chr_ram[(addr & 0x1FFF) as usize] = data;
     }
 
-    fn read_ex(&mut self, addr: u16) -> u8 {
+    fn read_ex(&mut self, addr: u16) -> Option<u8> {
         match addr {
             0x4030 => {
                 let mut res = 0;
@@ -92,7 +92,7 @@ impl Mapper for FDS {
                     self.drive.byte_transfer_flag,
                     self.drive.end_of_head
                 );
-                res
+                Some(res)
             }
             0x4031 => {
                 let res = self.drive.data_register;
@@ -103,7 +103,7 @@ impl Mapper for FDS {
                 );
                 self.drive.byte_transfer_flag = false;
                 self.drive.disk_irq_pending = false;
-                res
+                Some(res)
             }
             0x4032 => {
                 let mut res = 0;
@@ -127,12 +127,12 @@ impl Mapper for FDS {
                     self.drive.head_position,
                     self.drive.transfer_reset
                 );
-                res
+                Some(res)
             }
-            0x4033 => 0x80, // Battery OK
-            0x4040..=0x407F => self.audio.read(addr),
-            0x6000..=0x7FFF => self.prg_ram[(addr - 0x6000) as usize],
-            _ => 0,
+            0x4033 => Some(0x80), // Battery OK
+            0x4040..=0x407F => Some(self.audio.read(addr)),
+            0x6000..=0x7FFF => Some(self.prg_ram[(addr - 0x6000) as usize]),
+            _ => None,
         }
     }
 

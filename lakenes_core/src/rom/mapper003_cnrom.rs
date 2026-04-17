@@ -24,15 +24,15 @@ impl CNROM {
 }
 
 impl Mapper for CNROM {
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_prg(&mut self, addr: u16) -> Option<u8> {
         if addr < 0x8000 {
-            return 0;
+            return None;
         }
         let mut idx = (addr as usize) - 0x8000;
         if self.prg_banks == 1 {
             idx %= 16 * 1024;
         }
-        self.prg_rom.get(idx).copied().unwrap_or(0)
+        self.prg_rom.get(idx).copied()
     }
 
     fn write_prg(&mut self, addr: u16, data: u8) {

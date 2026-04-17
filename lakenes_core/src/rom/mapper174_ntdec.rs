@@ -43,7 +43,7 @@ impl NTDec5in1 {
 }
 
 impl Mapper for NTDec5in1 {
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_prg(&mut self, addr: u16) -> Option<u8> {
         match addr {
             0x8000..=0xFFFF => {
                 let offset = if self.prg_mode == 0 {
@@ -57,12 +57,12 @@ impl Mapper for NTDec5in1 {
                 };
 
                 if offset < self.prg_rom.len() {
-                    self.prg_rom[offset]
+                    Some(self.prg_rom[offset])
                 } else {
-                    0
+                    None
                 }
             }
-            _ => 0,
+            _ => None,
         }
     }
 

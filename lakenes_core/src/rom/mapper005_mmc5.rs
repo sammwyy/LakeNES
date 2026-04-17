@@ -196,36 +196,36 @@ impl MMC5 {
 }
 
 impl Mapper for MMC5 {
-    fn read_ex(&mut self, addr: u16) -> u8 {
+    fn read_ex(&mut self, addr: u16) -> Option<u8> {
         match addr {
-            0x5015 => 0, // Sound stub
+            0x5015 => Some(0), // Sound stub
             0x5204 => {
                 let mut status = 0;
                 if self.irq_pending { status |= 0x80; }
                 if self.irq_in_frame { status |= 0x40; }
                 self.irq_pending = false;
-                status
+                Some(status)
             }
-            0x5205 => ((self.multiplicand as u16 * self.multiplier as u16) & 0xFF) as u8,
-            0x5206 => ((self.multiplicand as u16 * self.multiplier as u16) >> 8) as u8,
+            0x5205 => Some(((self.multiplicand as u16 * self.multiplier as u16) & 0xFF) as u8),
+            0x5206 => Some(((self.multiplicand as u16 * self.multiplier as u16) >> 8) as u8),
             0x5C00..=0x5FFF => {
                 if self.ex_ram_mode >= 2 {
-                    self.ex_ram[(addr - 0x5C00) as usize]
+                    Some(self.ex_ram[(addr - 0x5C00) as usize])
                 } else {
-                    0
+                    None
                 }
             }
             0x6000..=0x7FFF => {
                 let (is_ram, offset) = self.get_prg_offset(addr);
                 if is_ram {
                     let len = self.prg_ram.len();
-                    self.prg_ram[offset % len]
+                    Some(self.prg_ram[offset % len])
                 } else {
                     let len = self.prg_rom.len();
-                    self.prg_rom[offset % len]
+                    Some(self.prg_rom[offset % len])
                 }
             }
-            _ => 0,
+            _ => None,
         }
     }
 
@@ -282,14 +282,14 @@ impl Mapper for MMC5 {
         }
     }
 
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_prg(&mut self, addr: u16) -> Option<u8> {
         match addr {
             0x8000..=0xFFFF => {
                 let (_is_ram, offset) = self.get_prg_offset(addr);
                 let len = self.prg_rom.len();
-                self.prg_rom[offset % len]
+                Some(self.prg_rom[offset % len])
             }
-            _ => 0,
+            _ => None,
         }
     }
 

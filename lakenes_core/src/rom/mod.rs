@@ -56,12 +56,12 @@ pub enum ROMError {
 }
 
 pub trait Mapper: Send {
-    fn read_prg(&mut self, addr: u16) -> u8;
+    fn read_prg(&mut self, addr: u16) -> Option<u8>;
     fn write_prg(&mut self, addr: u16, data: u8);
 
     /// Expansion registers / RAM ($4020–$7FFF).
-    fn read_ex(&mut self, _addr: u16) -> u8 {
-        0
+    fn read_ex(&mut self, _addr: u16) -> Option<u8> {
+        None
     }
     /// Expansion registers / RAM ($4020–$7FFF).
     fn write_ex(&mut self, _addr: u16, _data: u8) {}

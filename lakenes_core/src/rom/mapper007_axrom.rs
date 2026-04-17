@@ -20,14 +20,14 @@ impl AxROM {
 }
 
 impl Mapper for AxROM {
-    fn read_prg(&mut self, addr: u16) -> u8 {
+    fn read_prg(&mut self, addr: u16) -> Option<u8> {
         if addr < 0x8000 {
-            return 0;
+            return None;
         }
 
         let bank_base = self.selected_prg_bank * 32 * 1024;
         let idx = bank_base + (addr as usize & 0x7FFF);
-        self.prg_rom.get(idx % self.prg_rom.len()).copied().unwrap_or(0)
+        Some(self.prg_rom.get(idx % self.prg_rom.len()).copied().unwrap_or(0))
     }
 
     fn write_prg(&mut self, addr: u16, data: u8) {
