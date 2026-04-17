@@ -478,6 +478,20 @@ function loop() {
     animationFrameId = requestAnimationFrame(loop);
 }
 
+window.stepFrame = () => {
+    if (!nes) return;
+    nes.update_joypad(1, currentButtons);
+    nes.step_frame();
+
+    const ptr = nes.get_frame_buffer_ptr();
+    const fb = new Uint32Array(wasmMemory.buffer, ptr, 256 * 240);
+    for (let i = 0; i < fb.length; i++) {
+        const pixel = fb[i];
+        data32[i] = 0xFF000000 | ((pixel & 0xFF) << 16) | (pixel & 0xFF00) | ((pixel >> 16) & 0xFF);
+    }
+    ctx.putImageData(imageData, 0, 0);
+};
+
 window.togglePause = () => {
     nes?.set_paused(!nes.is_paused());
     const btn = document.getElementById("btn-pause");
